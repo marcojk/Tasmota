@@ -211,6 +211,8 @@ enum UserSelectablePins {
   GPIO_LOX_O2_RX,                       // LOX-O2 RX
   GPIO_GM861_TX, GPIO_GM861_RX,         // GM861 Serial interface
   GPIO_DINGTIAN_OE,                     // New version of Dingtian relay board where PL is not shared with OE
+  GPIO_EBC_TX,                          // MiniclimaEBC TX
+  GPIO_EBC_RX,                          // MiniclimaEBC RX
   GPIO_SENSOR_END };
 
 // Error as warning to rethink GPIO usage with max 2045
@@ -468,7 +470,7 @@ const char kSensorNames[] PROGMEM =
   D_SENSOR_PCF8574_INT "|"
   D_SENSOR_LOX_O2_RX "|"
   D_SENSOR_GM861_TX "|" D_SENSOR_GM861_RX "|"
-  D_GPIO_DINGTIAN_OE "|"
+  D_GPIO_DINGTIAN_OE "|" D_GPIO_EBC_TX "|" D_GPIO_EBC_RX
   ;
 
 const char kSensorNamesFixed[] PROGMEM =
@@ -699,6 +701,11 @@ const uint16_t kGpioNiceList[] PROGMEM = {
 
   AGPIO(GPIO_TXD),                      // Serial interface
   AGPIO(GPIO_RXD),                      // Serial interface
+
+#ifdef USE_EBCMINICLIMA
+  AGPIO(GPIO_EBC_TX),                      // Serial interface
+  AGPIO(GPIO_EBC_RX),                      // Serial interface
+#endif
 
 /*-------------------------------------------------------------------------------------------*\
  * Single wire sensors
