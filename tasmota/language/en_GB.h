@@ -58,7 +58,6 @@
 #define D_AS "as"
 #define D_AUTO "AUTO"
 #define D_BATT "Batt"                // Short for Battery
-#define D_BATTERY_CHARGE "Charge"   // Battery charge in %
 #define D_BLINK "Blink"
 #define D_BLINKOFF "BlinkOff"
 #define D_BOOT_COUNT "Boot Count"
@@ -931,6 +930,8 @@
 #define D_GPIO_DINGTIAN_PL     "Dingtian PL"
 #define D_GPIO_DINGTIAN_OE     "Dingtian OE"
 #define D_GPIO_DINGTIAN_RCK    "Dingtian RCK"
+#define D_GPIO_EBC_TX          "EBC TX"
+#define D_GPIO_EBC_RX          "EBC RX"
 #define D_SENSOR_CM11_TX       "CM110x TX"
 #define D_SENSOR_CM11_RX       "CM110x RX"
 #define D_SENSOR_FLOWRATEMETER "Flowrate"
