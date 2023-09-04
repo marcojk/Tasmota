@@ -64,6 +64,9 @@ static const struct EBC_MODEL_MAP ebcLinkMode[] = {
 #define EBCEASY_HUMIDITY_HIGH   0x02
 #define EBCEASY_HUMIDITY_LOW    0x01
 
+#define EBC_INIT                0
+#define EBC_PREINIT             1
+
 #include <TasmotaSerial.h>
 
 char ebc_buffer[EBC_MAX_DATA_LEN + 1];
@@ -90,7 +93,7 @@ struct ebcStatus {
     char lastTime[6]; //11:59
     bool running;
     bool simulator;
-    bool inited;
+    uint8_t inited;
     uint8_t setpoint;
     uint8_t setpointHumidityH;
     uint8_t setpointHumidityL;
@@ -324,7 +327,7 @@ void ebcStartStop( bool state) {
     ebcstatus.ebcstate = NEXT_START;
   }
   else{
-    ebcSerial->write(cmd_stop, strlen(cmd_start);
+    ebcSerial->write(cmd_stop, strlen(cmd_start));
     ebcstatus.ebcstate = NEXT_STOP;
   }
 }
@@ -409,9 +412,10 @@ void ebcProcessData(void) {
     ResponseCmndDone();
 }
 
-void ebcInit(void)
+void ebcInit(uint32_t func)
 {
-    ebcstatus.inited = false;
+    if(func == EBC_PREINIT) {
+    ebcstatus.inited = 0;
     AddLog(LOG_LEVEL_DEBUG, PSTR("EBC Miniclima init..."));
     if(!PinUsed(GPIO_EBC_RX) || !PinUsed(GPIO_EBC_TX))
     {
@@ -425,10 +429,15 @@ void ebcInit(void)
         /*if (ebcSerial->hardwareSerial()) {
         ClaimSerial();
         }*/
-        ebcstatus.inited = true;
+        ebcstatus.inited = EBC_INIT;
         ebcstatus.simulator = false;
     }
     else AddLog(LOG_LEVEL_DEBUG, PSTR("EBC ser NOT started"));
+    } else if(func == EBC_INIT) {
+      ExecuteWebCommand("EBCVALS");
+      ExecuteWebCommand("EBCSERNUM");
+    }
+
 }
 
 void ebcParseDateTime(char * buffer) {
@@ -456,7 +465,7 @@ void ebcParsePeriodicData(char * buffer) {
   if (buffer != NULL) {
     if( buffer[0] == 'S' && buffer[1] == 'e') { //periodic dopo "start"
       //Set:76 51 71 01 11 +00 03 59 27 +28 +28 00
-      sscanf( buffer, "%[^:]:%d %d %d %d %d %d %d %d %d %d %d", &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH, 
+      sscanf( buffer, "%[^:]:%hhd %hhd %hhd %hhd %hhd %hhd %hhd %hhd %hhd %hhd %hhd", &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH, 
       &ebcstatus.alarmdelay, &ebcstatus.interval, &ebcstatus.rhCorrection, &ebcstatus.humidity, &ebcstatus.temperature, &ebcstatus.t_cond, &ebcstatus.t_cool, &ebcstatus.alarms);
       return;
     }
@@ -471,7 +480,7 @@ correction>
     if( buffer[17] == 'S' && buffer[18] == 'e') { //periodic dopo "stop"
       //54 28 +28 +29 00 Set:15 10 25 01 01 +00
       AddLog(LOG_LEVEL_DEBUG,"into set after stop");
-      sscanf( buffer, "%d %d %d %d %d %[^:]:%d %d %d %d %d %d", 
+      sscanf( buffer, "%hhd %hhd %hhd %hhd %hhd %[^:]:%hhd %hhd %hhd %hhd %hhd %hhd", 
       &ebcstatus.humidity, &ebcstatus.temperature, &ebcstatus.t_cond, &ebcstatus.t_cool, &ebcstatus.alarms,
       &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH,
       &ebcstatus.alarmdelay, &ebcstatus.interval, &ebcstatus.rhCorrection);
@@ -597,9 +606,11 @@ void MI32HandleWebGUI(void){
 
 bool Xdrv100(uint32_t function) {
   bool result = false;
-
-  if (FUNC_INIT == function) {
-    ebcInit();
+  if (FUNC_PRE_INIT == function) {
+    ebcInit(0);
+  }
+  else if (FUNC_INIT == function) {
+    ebcInit(1);
     } else if (ebcstatus.inited) {
       switch (function) {
         case FUNC_EVERY_SECOND:
