@@ -66,6 +66,7 @@ static const struct EBC_MODEL_MAP ebcLinkMode[] = {
 
 #define EBC_INIT                0
 #define EBC_PREINIT             1
+#define EBC_INITED              2
 
 #include <TasmotaSerial.h>
 
@@ -327,7 +328,7 @@ void ebcStartStop( bool state) {
     ebcstatus.ebcstate = NEXT_START;
   }
   else{
-    ebcSerial->write(cmd_stop, strlen(cmd_start));
+    ebcSerial->write(cmd_stop, strlen(cmd_stop));
     ebcstatus.ebcstate = NEXT_STOP;
   }
 }
@@ -356,6 +357,16 @@ void ebcProcessData(void) {
             ResponseCmndError();
             return;
           }
+          if(strstr(ebc_buffer, PSTR("."))) {
+            AddLog(LOG_LEVEL_DEBUG, "in .");
+            ebcParseDateTime(ebc_buffer);
+            return;
+            }
+            else if(strstr(ebc_buffer, PSTR("Set"))) {
+              AddLog(LOG_LEVEL_DEBUG, "in set setpoint");
+              ebcParsePeriodicData(ebc_buffer);
+              AddLog(LOG_LEVEL_DEBUG, "out set setpoint");
+          }
         break;
         case NEXT_SERNUM:
           AddLog(LOG_LEVEL_DEBUG_MORE,"SERNUM %s", ebc_buffer);
@@ -372,11 +383,12 @@ void ebcProcessData(void) {
           break;
         case NEXT_START:
             AddLog(LOG_LEVEL_DEBUG,"START %s", ebc_buffer);
-          if(!strcmp(cmd_start, ebc_buffer))
+          if(!strcmp(PSTR("start"), ebc_buffer))
             return; //handle echo
           if(strstr(ebc_buffer, PSTR("Start"))) {
             AddLog(LOG_LEVEL_DEBUG, "in start");
             ebcParseDateTime(ebc_buffer);
+
             }
             else if (strstr(ebc_buffer, PSTR("Set"))) {
               AddLog(LOG_LEVEL_DEBUG, "in set");
@@ -392,9 +404,12 @@ void ebcProcessData(void) {
           break;
         case NEXT_STOP:
             AddLog(LOG_LEVEL_DEBUG,"STOP %s", ebc_buffer);
-            if(!strcmp(cmd_stop, ebc_buffer))
+            if(!strcmp(PSTR("stop"), ebc_buffer))
+              {AddLog(LOG_LEVEL_DEBUG,"stop echo");
               return; //handle echo
+              }
             if(strstr(ebc_buffer, PSTR("Stop"))) {
+              AddLog(LOG_LEVEL_DEBUG,"stop parse datetime");
               ebcParseDateTime(ebc_buffer);
               ebcstatus.running = 0;
             }
@@ -412,10 +427,8 @@ void ebcProcessData(void) {
     ResponseCmndDone();
 }
 
-void ebcInit(uint32_t func)
+void ebcInit()
 {
-    if(func == EBC_PREINIT) {
-    ebcstatus.inited = 0;
     AddLog(LOG_LEVEL_DEBUG, PSTR("EBC Miniclima init..."));
     if(!PinUsed(GPIO_EBC_RX) || !PinUsed(GPIO_EBC_TX))
     {
@@ -429,15 +442,11 @@ void ebcInit(uint32_t func)
         /*if (ebcSerial->hardwareSerial()) {
         ClaimSerial();
         }*/
-        ebcstatus.inited = EBC_INIT;
+        ebcstatus.inited = EBC_INITED;
         ebcstatus.simulator = false;
     }
     else AddLog(LOG_LEVEL_DEBUG, PSTR("EBC ser NOT started"));
-    } else if(func == EBC_INIT) {
-      ExecuteWebCommand("EBCVALS");
-      ExecuteWebCommand("EBCSERNUM");
-    }
-
+   
 }
 
 void ebcParseDateTime(char * buffer) {
@@ -515,38 +524,49 @@ void MyProjectInit()
 }
 
 void EBCShow(bool json) {
+  if (ebcstatus.inited == EBC_INITED) {
       if (json) {
       //  ResponseAppend_P(PSTR(",\"EBC miniClima\":{\"" D_JSON_VOLTAGE "\":%d}"), &magic);
+      ResponseAppend_P(PSTR(",\"EBC miniClima\":{"));
+      ResponseAppend_P(PSTR("\"Humidity\":%d,"), ebcstatus.humidity);
+      ResponseAppend_P(PSTR("\"Temperature\":%d,"), ebcstatus.temperature);
+      ResponseJsonEnd();
       } else {
-        WSContentSend_PD("{s}setpoint {m}%d{e}{s}rhCorrection {m}%d{e}{s}Hysteresis {m}%d{e}{s}humidity {m}%d{e}{s}temperature {m}%d{e}{s}Serial number {m}%s{e}{s}FW version{m}%s{e}{s}Stato{m}%s{e}",
-        ebcstatus.setpoint, ebcstatus.rhCorrection,
-ebcstatus.hysteresis, ebcstatus.humidity, ebcstatus.temperature, ebcstatus.serialNumber, ebcstatus.firmwareVer, ebcstatus.running ? PSTR("Attivo") : PSTR("Arrestato"));
+        WSContentSend_PD("{s}Umidità corrente {m}%d{e}{s}Temperatura {m}%d{e}{s}Setpoint {m}%d{e}{s}Correzione RH {m}%d{e}{s}Hysteresis {m}%d{e}{s}Serial number {m}%s{e}{s}FW version{m}%s{e}{s}Stato{m}%s{e}",
+        ebcstatus.humidity, ebcstatus.temperature, ebcstatus.setpoint, ebcstatus.rhCorrection,
+ebcstatus.hysteresis,  ebcstatus.serialNumber, ebcstatus.firmwareVer, ebcstatus.running ? PSTR("Attivo") : PSTR("Arrestato"));
         //WSContentSend_PD(PSTR("{s}Firmware version{m}%s {e}"), ebcstatus.firmwareVer);
         //WSContentSend_P(PSTR("{s}P{m}%s {e}"), ebcstatus.firmwareVer);
         //WSContentSend_PD(PSTR("{s}one value{e}"));
       }
+  }
 }
 
 //#ifdef USE_WEBSERVER
 
 void LscMcAddFuctionButtons(void) {
-  //WSContentSend_P(HTTP_TABLE100);
-  //WSContentSend_P(PSTR("<tr>"));
+  WSContentSend_P(HTTP_TABLE100);
+  WSContentSend_P(PSTR("<tr>"));
   WSContentSend_P(HTTP_MSG_SLIDER_GRADIENT,  // Cold Warm
     PSTR("a"),             // a - Unique HTML id
     PSTR("#ffffff"), PSTR("#73a1"),  // 6500k in RGB (White) to 2500k in RGB (Warm Yellow)
     1,               // sl1
-    1, 100,        // Range color temperature
+    10, 85,        // Range color temperature
     0,
     'h', 0);         // sp0 - Value id releated to lc("h0", value) and WebGetArg("h0", tmp, sizeof(tmp));
 
-//  WSContentSend_P(PSTR("</tr></table>"));
+  WSContentSend_P(PSTR("</tr></table>"));
   WSContentSend_P(HTTP_TABLE100);
   WSContentSend_P(PSTR("<tr>"));
   WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&ebc=1\");'>%s</button></td>"), 50,   // &ebc is related to WebGetArg("lsc", tmp, sizeof(tmp));
   PSTR("Avvia"));
   WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&ebc=0\");'>%s</button></td>"), 50,   // &ebc is related to WebGetArg("lsc", tmp, sizeof(tmp));
   PSTR("Ferma"));
+  WSContentSend_P(PSTR("</tr></table>"));
+  
+  WSContentSend_P(HTTP_TABLE100);
+  WSContentSend_P(PSTR("<tr>"));
+  WSContentSend_P("<td style='width:32%;text-align:center;font-weight:normal;font-size:14px'>test</td>");
   WSContentSend_P(PSTR("</tr></table>"));
   /*
   uint32_t rows = 1;
@@ -606,12 +626,10 @@ void MI32HandleWebGUI(void){
 
 bool Xdrv100(uint32_t function) {
   bool result = false;
-  if (FUNC_PRE_INIT == function) {
-    ebcInit(0);
-  }
-  else if (FUNC_INIT == function) {
-    ebcInit(1);
-    } else if (ebcstatus.inited) {
+  if (FUNC_INIT == function) {
+    AddLog(LOG_LEVEL_DEBUG,"call init");
+    ebcInit();
+  } else if (ebcstatus.inited == EBC_INITED ) {
       switch (function) {
         case FUNC_EVERY_SECOND:
           break;
@@ -639,6 +657,10 @@ bool Xdrv100(uint32_t function) {
               case NEXT_START:
                 ebcSerial->write("11.06.08 13:30 Start\r");
                 ebcSerial->write("Set:15 10 25 01 01 +00 53 28 +28 +29 00\r");
+              break;
+              case NEXT_SETPOINT:
+                ebcSerial->write("11.06.08 13:12\r");
+                ebcSerial->write("Set:50 40 60 01 01 +00\r");
               break;
               default:
               break;
