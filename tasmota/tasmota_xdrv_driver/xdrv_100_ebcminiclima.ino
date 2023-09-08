@@ -430,8 +430,9 @@ void ebcProcessData(void) {
     ResponseCmndDone();
 }
 
-void ebcInit()
+void ebcInit(uint32_t func)
 {
+    if (FUNC_PRE_INIT == func) {
     AddLog(LOG_LEVEL_DEBUG, PSTR("EBC Miniclima init..."));
     if(!PinUsed(GPIO_EBC_RX) || !PinUsed(GPIO_EBC_TX))
     {
@@ -449,7 +450,11 @@ void ebcInit()
         ebcstatus.simulator = false;
     }
     else AddLog(LOG_LEVEL_DEBUG, PSTR("EBC ser NOT started"));
-   
+    }
+    if (FUNC_INIT == func) {
+      ExecuteWebCommand(PSTR("ebcvals"));
+      ExecuteWebCommand(PSTR("ebcsernum"));
+    }
 }
 
 void ebcParseDateTime(char * buffer) {
@@ -632,16 +637,17 @@ void MI32HandleWebGUI(void){
 
 bool Xdrv100(uint32_t function) {
   bool result = false;
-  if (FUNC_INIT == function) {
-    AddLog(LOG_LEVEL_DEBUG,"call init");
-    ebcInit();
-  } else if (ebcstatus.inited == EBC_INITED ) {
+  if (FUNC_PRE_INIT == function) 
+    ebcInit(FUNC_PRE_INIT);
+  else if(FUNC_INIT == function)
+    ebcInit(FUNC_INIT);
+  else if (ebcstatus.inited == EBC_INITED ) {
       switch (function) {
         case FUNC_EVERY_SECOND:
           break;
         case FUNC_WEB_SENSOR:
           EBCShow(0);
-          break;
+          break; 
         case FUNC_COMMAND:
           result = DecodeCommand(MyProjectCommands, MyProjectCommand);
           if (ebcstatus.simulator) {
