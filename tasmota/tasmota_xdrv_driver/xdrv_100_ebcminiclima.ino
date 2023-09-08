@@ -1,7 +1,9 @@
 /*
   xdrv_100_ebcminiclima.ino EBC10/12 support
 */
-
+#ifndef USE_EBCMINICLIMA
+#define USE_EBCMINICLIMA
+#endif
 #ifdef USE_EBCMINICLIMA
 /*********************************************************************************************\
  * My IoT Device example3
@@ -96,6 +98,7 @@ struct ebcStatus {
     bool simulator;
     uint8_t inited;
     uint8_t setpoint;
+    uint8_t targetsetpoint;
     uint8_t setpointHumidityH;
     uint8_t setpointHumidityL;
     uint8_t alarmdelay;
@@ -557,17 +560,19 @@ void LscMcAddFuctionButtons(void) {
 
   WSContentSend_P(PSTR("</tr></table>"));
   WSContentSend_P(HTTP_TABLE100);
-  WSContentSend_P(PSTR("<tr>"));
+  WSContentSend_P("<tr><td style='width:32%;text-align:center;font-weight:normal;font-size:28px'>Desiderato: %d</td></tr>", ebcstatus.targetsetpoint);
+  WSContentSend_P("<tr>");
   WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&ebc=1\");'>%s</button></td>"), 50,   // &ebc is related to WebGetArg("lsc", tmp, sizeof(tmp));
   PSTR("Avvia"));
   WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&ebc=0\");'>%s</button></td>"), 50,   // &ebc is related to WebGetArg("lsc", tmp, sizeof(tmp));
   PSTR("Ferma"));
   WSContentSend_P(PSTR("</tr></table>"));
   
-  WSContentSend_P(HTTP_TABLE100);
+  /*WSContentSend_P(HTTP_TABLE100);
   WSContentSend_P(PSTR("<tr>"));
-  WSContentSend_P("<td style='width:32%;text-align:center;font-weight:normal;font-size:14px'>test</td>");
+  WSContentSend_P("<td style='width:32%;text-align:center;font-weight:normal;font-size:28px'>test</td>");
   WSContentSend_P(PSTR("</tr></table>"));
+  */
   /*
   uint32_t rows = 1;
   uint32_t cols = 8;
@@ -614,6 +619,7 @@ void LscMcWebGetArg(void) {
     AddLog(LOG_LEVEL_DEBUG,"%s", tmp);
     char cmd[30];
     snprintf_P(cmd, sizeof(cmd), PSTR("ebcsetpoint %d,0,0,0"), function);
+    ebcstatus.targetsetpoint = function;
     ExecuteWebCommand(cmd);
     
   }
