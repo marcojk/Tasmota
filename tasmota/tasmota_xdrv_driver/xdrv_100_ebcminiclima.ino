@@ -226,9 +226,32 @@ void CmdSimulate(void) {
   ResponseCmndDone();
 }
 
+    char lastDate[9]; //00.00.00
+    char lastTime[6]; //11:59
+    bool running;
+    bool simulator;
+    uint8_t inited;
+    uint8_t setpoint;
+    uint8_t targetsetpoint;
+    uint8_t setpointHumidityH;
+    uint8_t setpointHumidityL;
+    uint8_t alarmdelay;
+    uint8_t interval;
+    int8_t  rhCorrection;
+    uint8_t hysteresis;
+    uint8_t humidity;
+    uint8_t temperature;
+    int8_t  t_cond;
+    int8_t  t_cool;
+    char serialNumber[SERIAL_NUMBER_LEN];
+    char firmwareVer[FIRMWARE_VER_LEN];
+    enum EBC_STATE ebcstate;
+    enum EBC_MODEL model;
+    uint8_t alarms;
 void CmdEbcStatus(void) {
 AddLog(LOG_LEVEL_INFO,
-"setpoint %d\nrhCorrection %d\nhysteresis %d\nhumidity %d\ntemperature %d\nSerial number %s\n FW ver%s", ebcstatus.setpoint, ebcstatus.rhCorrection,
+"inited %d\nsetpoint %d\ntarget setpoint %d\nsetpointH %d\nsetpointL %d\nAlarm delay %d\ndelay %d\nrhCorrection %d\nhysteresis %d\nhumidity %d\ntemperature %d\nSerial number %s\nFW ver %s",
+ ebcstatus.inited, ebcstatus.setpoint, ebcstatus.targetsetpoint, ebcstatus.setpointHumidityH, ebcstatus.setpointHumidityL, ebcstatus.alarmdelay, ebcstatus.interval, ebcstatus.rhCorrection,
 ebcstatus.hysteresis, ebcstatus.humidity, ebcstatus.temperature, ebcstatus.serialNumber, ebcstatus.firmwareVer
 );
   ResponseCmndDone();
@@ -340,16 +363,19 @@ void ebcProcessData(void) {
     AddLog(LOG_LEVEL_DEBUG,PSTR("Line from serial: %s"),ebc_buffer);
     switch (ebcstatus.ebcstate) {
         case NEXT_VALS:
+        
           AddLog(LOG_LEVEL_DEBUG_MORE,"VALS %s", ebc_buffer);
           char runstop[10];
           uint8_t alarms;
           if(!strcmp(cmd_vals, ebc_buffer))
             return; //handle echo
-          sscanf( ebc_buffer, "%s %d %d %d %d %d", runstop, &ebcstatus.humidity, &ebcstatus.temperature, &ebcstatus.t_cond, &ebcstatus.t_cool, &alarms );
-            if(!strcmp(PSTR("Running"), runstop))
-              ebcstatus.running = true;
-            else if(!strcmp(PSTR("Standby"), runstop))
-              ebcstatus.running = false;
+          if(strstr(ebc_buffer,PSTR("Running"))) {
+            sscanf( ebc_buffer, "%s %hhd %hhd %hhd %hhd %hhd", runstop, &ebcstatus.humidity, &ebcstatus.temperature, &ebcstatus.t_cond, &ebcstatus.t_cool, &alarms );
+            ebcstatus.running = true;
+          } else if(ebc_buffer, strstr(ebc_buffer, PSTR("Stand by"))) {
+            sscanf( ebc_buffer, "%s %s %hhd %hhd %hhd %hhd %hhd", runstop, runstop, &ebcstatus.humidity, &ebcstatus.temperature, &ebcstatus.t_cond, &ebcstatus.t_cool, &alarms );
+            ebcstatus.running = false;
+          }
           ebcCheckAlarms(alarms);
           break;
         case NEXT_SETPOINT:
@@ -360,16 +386,8 @@ void ebcProcessData(void) {
             ResponseCmndError();
             return;
           }
-          if(strstr(ebc_buffer, PSTR("."))) {
-            AddLog(LOG_LEVEL_DEBUG, "in .");
-            ebcParseDateTime(ebc_buffer);
-            return;
-            }
-            else if(strstr(ebc_buffer, PSTR("Set"))) {
-              AddLog(LOG_LEVEL_DEBUG, "in set setpoint");
-              ebcParsePeriodicData(ebc_buffer);
-              AddLog(LOG_LEVEL_DEBUG, "out set setpoint");
-          }
+          ebcParseDateTime(ebc_buffer);
+          ebcParsePeriodicData(&ebc_buffer[15]);
         break;
         case NEXT_SERNUM:
           AddLog(LOG_LEVEL_DEBUG_MORE,"SERNUM %s", ebc_buffer);
@@ -377,7 +395,9 @@ void ebcProcessData(void) {
             return; //handle echo
           char model;
           char fill[10];
-          sscanf( ebc_buffer, "%s %s %s %[^:]:%d %d %d %d %d %d %d", ebcstatus.serialNumber, &model, ebcstatus.firmwareVer, fill, &ebcstatus.setpoint, &ebcstatus.setpointHumidityH, &ebcstatus.setpointHumidityL, &ebcstatus.alarmdelay, &ebcstatus.interval, &ebcstatus.rhCorrection, &ebcstatus.hysteresis);
+                      //#003628 M 170908.04 Set:76 51 71 01 11 +00 03
+                      
+          sscanf( ebc_buffer, "%s %s %s %[^:]:%hhd %hhd %hhd %hhd %hhd %hhd %hhd", ebcstatus.serialNumber, &model, ebcstatus.firmwareVer, &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH, &ebcstatus.alarmdelay, &ebcstatus.interval, &ebcstatus.rhCorrection, &ebcstatus.hysteresis);
           break;
         case NEXT_DATE:
           AddLog(LOG_LEVEL_DEBUG_MORE,"DATE %s", ebc_buffer);
@@ -386,29 +406,22 @@ void ebcProcessData(void) {
           break;
         case NEXT_START:
             AddLog(LOG_LEVEL_DEBUG,"START %s", ebc_buffer);
-          if(!strcmp(PSTR("start"), ebc_buffer))
-            return; //handle echo
-          if(strstr(ebc_buffer, PSTR("Start"))) {
-            AddLog(LOG_LEVEL_DEBUG, "in start");
-            ebcParseDateTime(ebc_buffer);
-
-            }
-            else if (strstr(ebc_buffer, PSTR("Set"))) {
-              AddLog(LOG_LEVEL_DEBUG, "in set");
-              ebcParsePeriodicData(ebc_buffer);
-              AddLog(LOG_LEVEL_DEBUG, "out set");
-              ebcstatus.running = 1;
-            }
-          else {
-            AddLog(LOG_LEVEL_DEBUG,"calling startstop from ebcprocessdata");
+          if(!strcmp(PSTR("start"), ebc_buffer)) {
+            AddLog(LOG_LEVEL_DEBUG,"calling start from ebcprocessdata");
             ebcStartStop(true);
-            return;
+            return; //handle echo
           }
+          if(strstr(ebc_buffer, PSTR("Start"))) {
+            AddLog(LOG_LEVEL_DEBUG, "start parse datetime");
+            ebcParseDateTime(ebc_buffer);
+            ebcstatus.running = 1;
+            }          
           break;
         case NEXT_STOP:
             AddLog(LOG_LEVEL_DEBUG,"STOP %s", ebc_buffer);
-            if(!strcmp(PSTR("stop"), ebc_buffer))
-              {AddLog(LOG_LEVEL_DEBUG,"stop echo");
+            if(!strcmp(PSTR("stop"), ebc_buffer)) {
+              AddLog(LOG_LEVEL_DEBUG,"calling stop from ebcprocessdata");
+              ebcStartStop(false);
               return; //handle echo
               }
             if(strstr(ebc_buffer, PSTR("Stop"))) {
@@ -416,13 +429,9 @@ void ebcProcessData(void) {
               ebcParseDateTime(ebc_buffer);
               ebcstatus.running = 0;
             }
-            else {
-              AddLog(LOG_LEVEL_DEBUG,"calling startstop from ebcprocessdata");
-              ebcStartStop(false);
-              return;
-            }
             break;
         default:
+          ebcParseDateTime(ebc_buffer);
           ebcParsePeriodicData(ebc_buffer);
           break;
         ebcstatus.ebcstate = IDLE;
@@ -452,16 +461,18 @@ void ebcInit(uint32_t func)
     else AddLog(LOG_LEVEL_DEBUG, PSTR("EBC ser NOT started"));
     }
     if (FUNC_INIT == func) {
-      ExecuteWebCommand(PSTR("ebcvals"));
-      ExecuteWebCommand(PSTR("ebcsernum"));
+      //ExecuteWebCommand(PSTR("ebcvals"));
+      //ExecuteWebCommand(PSTR("ebcsernum"));
     }
 }
 
 void ebcParseDateTime(char * buffer) {
-  strncpy(ebcstatus.lastDate, buffer, 8);
-  ebcstatus.lastDate[8] = 0;
-  strncpy(ebcstatus.lastTime, buffer+10, 5);
-  ebcstatus.lastTime[5];
+  if(strstr(ebc_buffer, ".")) {
+    strncpy(ebcstatus.lastDate, buffer, 8);
+    ebcstatus.lastDate[8] = 0;
+    strncpy(ebcstatus.lastTime, buffer+10, 5);
+    ebcstatus.lastTime[5];
+    }
 }
 
 /*    bool simulator;
@@ -481,9 +492,10 @@ void ebcParseDateTime(char * buffer) {
 void ebcParsePeriodicData(char * buffer) {
   if (buffer != NULL) {
     if( buffer[0] == 'S' && buffer[1] == 'e') { //periodic dopo "start"
-      //Set:76 51 71 01 11 +00 03 59 27 +28 +28 00
-      sscanf( buffer, "%[^:]:%hhd %hhd %hhd %hhd %hhd %hhd %hhd %hhd %hhd %hhd %hhd", &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH, 
-      &ebcstatus.alarmdelay, &ebcstatus.interval, &ebcstatus.rhCorrection, &ebcstatus.humidity, &ebcstatus.temperature, &ebcstatus.t_cond, &ebcstatus.t_cool, &ebcstatus.alarms);
+      //parte1 Set:76 51 71 01 11 +00 03 
+      //parte2 59 27 +28 +28 00
+      sscanf( buffer, "%[^:]:%hhd %hhd %hhd %hhd %hhd %hhd %hhd", &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH, 
+      &ebcstatus.alarmdelay, &ebcstatus.interval, &ebcstatus.rhCorrection);
       return;
     }
 /*    <RH value> <temperature> <t@cond>
@@ -494,16 +506,14 @@ correction>
     54 28 +28 +29 00 Set:15 10
 25 01 01 +00
 */
-    if( buffer[17] == 'S' && buffer[18] == 'e') { //periodic dopo "stop"
-      //54 28 +28 +29 00 Set:15 10 25 01 01 +00
-      AddLog(LOG_LEVEL_DEBUG,"into set after stop");
-      sscanf( buffer, "%hhd %hhd %hhd %hhd %hhd %[^:]:%hhd %hhd %hhd %hhd %hhd %hhd", 
-      &ebcstatus.humidity, &ebcstatus.temperature, &ebcstatus.t_cond, &ebcstatus.t_cool, &ebcstatus.alarms,
-      &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH,
-      &ebcstatus.alarmdelay, &ebcstatus.interval, &ebcstatus.rhCorrection);
+else{ 
+        //54 28 +28 +29 00
+      sscanf( buffer, "%hhd %hhd %hhd %hhd %hhd", 
+      &ebcstatus.humidity, &ebcstatus.temperature, &ebcstatus.t_cond, &ebcstatus.t_cool, &ebcstatus.alarms);
       return;
-    }
+    
   }
+}
 }
 void MyProjectInit()
 {
@@ -540,38 +550,37 @@ void EBCShow(bool json) {
       ResponseAppend_P(PSTR("\"Temperature\":%d,"), ebcstatus.temperature);
       ResponseJsonEnd();
       } else {
-        WSContentSend_PD("{s}Umidità corrente {m}%d{e}{s}Temperatura {m}%d{e}{s}Setpoint {m}%d{e}{s}Correzione RH {m}%d{e}{s}Hysteresis {m}%d{e}{s}Serial number {m}%s{e}{s}FW version{m}%s{e}{s}Stato{m}%s{e}",
+        WSContentSend_PD("{s}Umidità rilevata{m}%d{e}{s}Temperatura{m}%d{e}{s}Setpoint{m}%d{e}{s}Correzione RH{m}%d{e}{s}Hysteresis{m}%d{e}{s}Serial number{m}%s{e}{s}FW version{m}%s{e}{s}Stato{m}%s{e}",
         ebcstatus.humidity, ebcstatus.temperature, ebcstatus.setpoint, ebcstatus.rhCorrection,
-ebcstatus.hysteresis,  ebcstatus.serialNumber, ebcstatus.firmwareVer, ebcstatus.running ? PSTR("Attivo") : PSTR("Arrestato"));
-        //WSContentSend_PD(PSTR("{s}Firmware version{m}%s {e}"), ebcstatus.firmwareVer);
-        //WSContentSend_P(PSTR("{s}P{m}%s {e}"), ebcstatus.firmwareVer);
-        //WSContentSend_PD(PSTR("{s}one value{e}"));
+        ebcstatus.hysteresis,  ebcstatus.serialNumber, ebcstatus.firmwareVer, ebcstatus.running ? PSTR("Attivo") : PSTR("Arrestato"));
+      WSContentSend_P(HTTP_TABLE100);
+      WSContentSend_P(PSTR("<tr>"));
+      WSContentSend_P(HTTP_MSG_SLIDER_GRADIENT,  // Cold Warm
+        PSTR("a"),             // a - Unique HTML id
+        PSTR("#ffffff"), PSTR("#73a1"),  // 6500k in RGB (White) to 2500k in RGB (Warm Yellow)
+        1,               // sl1
+        10, 85,        // Range color temperature
+        ebcstatus.targetsetpoint,
+        'h', 0);         // sp0 - Value id releated to lc("h0", value) and WebGetArg("h0", tmp, sizeof(tmp));
+
+      WSContentSend_P(PSTR("</tr></table>"));
       }
   }
 }
 
 //#ifdef USE_WEBSERVER
 
-void LscMcAddFuctionButtons(void) {
-  WSContentSend_P(HTTP_TABLE100);
-  WSContentSend_P(PSTR("<tr>"));
-  WSContentSend_P(HTTP_MSG_SLIDER_GRADIENT,  // Cold Warm
-    PSTR("a"),             // a - Unique HTML id
-    PSTR("#ffffff"), PSTR("#73a1"),  // 6500k in RGB (White) to 2500k in RGB (Warm Yellow)
-    1,               // sl1
-    10, 85,        // Range color temperature
-    0,
-    'h', 0);         // sp0 - Value id releated to lc("h0", value) and WebGetArg("h0", tmp, sizeof(tmp));
 
-  WSContentSend_P(PSTR("</tr></table>"));
-  WSContentSend_P(HTTP_TABLE100);
-  WSContentSend_P("<tr><td style='width:32%;text-align:center;font-weight:normal;font-size:28px'>Desiderato: %d</td></tr>", ebcstatus.targetsetpoint);
-  WSContentSend_P("<tr>");
-  WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&ebc=1\");'>%s</button></td>"), 50,   // &ebc is related to WebGetArg("lsc", tmp, sizeof(tmp));
-  PSTR("Avvia"));
-  WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&ebc=0\");'>%s</button></td>"), 50,   // &ebc is related to WebGetArg("lsc", tmp, sizeof(tmp));
-  PSTR("Ferma"));
-  WSContentSend_P(PSTR("</tr></table>"));
+
+void LscMcAddFuctionButtons(void) {
+      WSContentSend_P(HTTP_TABLE100);
+      WSContentSend_P("<tr><td style='width:32%;text-align:center;font-weight:normal;font-size:28px'>Desiderato: %d</td></tr>", ebcstatus.targetsetpoint);
+      WSContentSend_P("<tr>");
+      WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&ebc=1\");'>%s</button></td>"), 50,   // &ebc is related to WebGetArg("lsc", tmp, sizeof(tmp));
+      PSTR("Avvia"));
+      WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&ebc=0\");'>%s</button></td>"), 50,   // &ebc is related to WebGetArg("lsc", tmp, sizeof(tmp));
+      PSTR("Ferma"));
+      WSContentSend_P(PSTR("</tr></table>"));
   
   /*WSContentSend_P(HTTP_TABLE100);
   WSContentSend_P(PSTR("<tr>"));
@@ -621,7 +630,7 @@ void LscMcWebGetArg(void) {
   WebGetArg(PSTR("h0"), tmp, sizeof(tmp));  // 0 - 7 functions
   if(strlen(tmp)) {
     uint32_t function = atoi(tmp);
-    AddLog(LOG_LEVEL_DEBUG,"%s", tmp);
+    AddLog(LOG_LEVEL_DEBUG,"%d", function);
     char cmd[30];
     snprintf_P(cmd, sizeof(cmd), PSTR("ebcsetpoint %d,0,0,0"), function);
     ebcstatus.targetsetpoint = function;
@@ -637,6 +646,7 @@ void MI32HandleWebGUI(void){
 
 bool Xdrv100(uint32_t function) {
   bool result = false;
+  static uint32_t refresh_interval = 0;
   if (FUNC_PRE_INIT == function) 
     ebcInit(FUNC_PRE_INIT);
   else if(FUNC_INIT == function)
@@ -644,6 +654,10 @@ bool Xdrv100(uint32_t function) {
   else if (ebcstatus.inited == EBC_INITED ) {
       switch (function) {
         case FUNC_EVERY_SECOND:
+          if(refresh_interval % 3 == 0) {
+            //ExecuteWebCommand("ebcvals");
+            //ExecuteWebCommand("ebcsernum");
+          }
           break;
         case FUNC_WEB_SENSOR:
           EBCShow(0);
@@ -653,11 +667,10 @@ bool Xdrv100(uint32_t function) {
           if (ebcstatus.simulator) {
              switch (ebcstatus.ebcstate) {
               case NEXT_VALS:
-                //AddLog(LOG_LEVEL_DEBUG, "writing to serial Running 48 29 +34 +30 00\r");
-                ebcSerial->write("Running 48 29 +34 +30 00\r",25);
+                ebcSerial->write("Stand by 53 26 +28 +28 00\r",25);
               break;
               case NEXT_SERNUM:
-                ebcSerial->write("#000975 M 120509.03 Set:15 10 25 01 01 +00 02\r",46);
+                ebcSerial->write("#003628 M 170908.04 Set:81 51 71 01 11 +00 03\r",46);
               break;
               case NEXT_DATE:
                 ebcSerial->write("11.06.07\r",9);
