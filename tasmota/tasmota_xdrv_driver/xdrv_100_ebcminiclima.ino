@@ -97,23 +97,23 @@ struct ebcStatus {
     bool running;
     bool simulator;
     uint8_t inited;
-    uint8_t setpoint;
-    uint8_t targetsetpoint;
-    uint8_t setpointHumidityH;
-    uint8_t setpointHumidityL;
-    uint8_t alarmdelay;
-    uint8_t interval;
-    int8_t  rhCorrection;
-    uint8_t hysteresis;
-    uint8_t humidity;
-    uint8_t temperature;
-    int8_t  t_cond;
-    int8_t  t_cool;
+    uint32_t setpoint;
+    uint32_t targetsetpoint;
+    uint32_t setpointHumidityH;
+    uint32_t setpointHumidityL;
+    uint32_t alarmdelay;
+    uint32_t interval;
+    int32_t  rhCorrection;
+    uint32_t hysteresis;
+    uint32_t humidity;
+    uint32_t temperature;
+    int32_t  t_cond;
+    int32_t  t_cool;
     char serialNumber[SERIAL_NUMBER_LEN];
     char firmwareVer[FIRMWARE_VER_LEN];
     enum EBC_STATE ebcstate;
     enum EBC_MODEL model;
-    uint8_t alarms;
+    uint32_t alarms;
 } ebcstatus;
 
 /*
@@ -141,7 +141,6 @@ void (* const MyProjectCommand[])(void) PROGMEM = {
   &CmdVals, &CmdSernum, &CmdDate, &CmdStart, &CmdStop, &CmdSimulate, &CmdEbcStatus, &CmdSetPoint, &CmdSendMQTT};
 
 void CmdVals(void) {
-  AddLog(LOG_LEVEL_INFO, cmd_vals);
   ebcSerial->write(cmd_vals, strlen(cmd_vals));
   ebcstatus.ebcstate = NEXT_VALS;
   AddLog(LOG_LEVEL_DEBUG, "next state VALS %d", ebcstatus.ebcstate);
@@ -150,7 +149,6 @@ void CmdVals(void) {
 
 void CmdSetPoint(void) {
   char cmd[20];
-  AddLog(LOG_LEVEL_INFO, cmd_setpoint);
    if (XdrvMailbox.data_len > 0) {
     if (XdrvMailbox.payload > 0) {
       char *p;
@@ -160,31 +158,34 @@ void CmdSetPoint(void) {
         param[i] = strtoul(str, nullptr, 0);
         i++;
       }
-      AddLog(LOG_LEVEL_DEBUG, PSTR("EBC: params %08x %08x %08x %08x"), param[0], param[1], param[2], param[3]);
-      if(param[0] >= 15 && param[0] <= 85 ) { //setpoint00
+      AddLog(LOG_LEVEL_DEBUG, PSTR("EBC: params %d %d %d %d"), param[0], param[1], param[2], param[3]);
+      /*if(param[0] >= 15 && param[0] <= 85 && param[1] == 0 && param[2] == 0 && param[3] == 0) { //setpoint00
         if( param[0] <= ebcstatus.setpointHumidityL + 5 )
           param[0] = ebcstatus.setpointHumidityL + 5;
         else if( param[0] >= ebcstatus.setpointHumidityH - 5)
-          param[0] = ebcstatus.setpointHumidityH - 5;
-        snprintf_P(cmd,sizeof(cmd),PSTR("#setPoint%02d%02d\r"), 0, param[0]);
-        AddLog(LOG_LEVEL_DEBUG,"Setpoint humidity: %s", cmd);
-        ebcSerial->write(cmd, strlen(cmd));
-      }
+          param[0] = ebcstatus.setpointHumidityH - 5;*/
+        if(param[0] >= 15 && param[0] <= 85) {  
+          snprintf_P(cmd,sizeof(cmd),PSTR("#setPoint%02d%02d\r"), 0, (uint8_t) (param[0]));
+          AddLog(LOG_LEVEL_DEBUG,"Setpoint humidity: %s", cmd);
+          ebcSerial->write(cmd, strlen(cmd));
+        }
+      
       else {
         AddLog(LOG_LEVEL_DEBUG, "formato errato setpoint 0");
-        return;
+        //return;
       }
-      if(param[1] >= 15 && param[1] <= 90 && param[2] >=5 && param[2] <=80 && param[1] >= param[2] ) { //setpoint01 setpoint02
+      if(param[1] >= 15 && param[1] <= 90 && param[2] >=5 && param[2] <=80 && param[2] >= param[1] ) { //setpoint01 setpoint02
+      AddLog(LOG_LEVEL_DEBUG,"setpoint 1 e 2");
         snprintf_P(cmd,sizeof(cmd),PSTR("#setPoint%02d%02d\r"), 1, param[1]);
         ebcSerial->write(cmd, strlen(cmd));
-        snprintf_P(cmd,sizeof(cmd),PSTR("#setPoint%02d%02d\r"), 2, param[1]);
+        snprintf_P(cmd,sizeof(cmd),PSTR("#setPoint%02d%02d\r"), 2, param[2]);
         ebcSerial->write(cmd, strlen(cmd));
-        AddLog(LOG_LEVEL_DEBUG,"Setpoint alarmH: %s alarmL: %d", param[1], param[2]);
+        AddLog(LOG_LEVEL_DEBUG,"Setpoint alarmH: %d alarmL: %d", param[1], param[2]);
       }
-      else if (param[1] != 0 && param[2] != 0) {
+      /*else if (param[1] != 0 && param[2] != 0) {
         AddLog(LOG_LEVEL_DEBUG, "formato errato setpoint 1 2");
         return;
-      }
+      }*/
     
     }
    }
@@ -226,28 +227,7 @@ void CmdSimulate(void) {
   ResponseCmndDone();
 }
 
-    char lastDate[9]; //00.00.00
-    char lastTime[6]; //11:59
-    bool running;
-    bool simulator;
-    uint8_t inited;
-    uint8_t setpoint;
-    uint8_t targetsetpoint;
-    uint8_t setpointHumidityH;
-    uint8_t setpointHumidityL;
-    uint8_t alarmdelay;
-    uint8_t interval;
-    int8_t  rhCorrection;
-    uint8_t hysteresis;
-    uint8_t humidity;
-    uint8_t temperature;
-    int8_t  t_cond;
-    int8_t  t_cool;
-    char serialNumber[SERIAL_NUMBER_LEN];
-    char firmwareVer[FIRMWARE_VER_LEN];
-    enum EBC_STATE ebcstate;
-    enum EBC_MODEL model;
-    uint8_t alarms;
+
 void CmdEbcStatus(void) {
 AddLog(LOG_LEVEL_INFO,
 "inited %d\nsetpoint %d\ntarget setpoint %d\nsetpointH %d\nsetpointL %d\nAlarm delay %d\ndelay %d\nrhCorrection %d\nhysteresis %d\nhumidity %d\ntemperature %d\nSerial number %s\nFW ver %s",
@@ -311,7 +291,7 @@ void ebcProcessSerialData (void)
             dataReady = ebcAddData((char)data);
             if (dataReady)
             {
-                AddLog(LOG_LEVEL_DEBUG,PSTR("DATA READY"));
+                //AddLog(LOG_LEVEL_DEBUG,PSTR("DATA READY"));
                 ebcProcessData();
             }
         }
@@ -322,11 +302,6 @@ bool ebcAddData(char nextChar)
 {
     // Buffer position
     static uint8_t currentIndex = 0;
-    // Store data into buffer at position
-    /* if ((currentIndex >0) && (0x0D == Tfmp_buffer[currentIndex-1]) && (0x59 == nextChar))
-    {
-        currentIndex = 1;
-    } */
     if (0x0D == nextChar) {
       ebc_buffer[currentIndex] = '\0';
       currentIndex = 0;
@@ -365,15 +340,17 @@ void ebcProcessData(void) {
         case NEXT_VALS:
         
           AddLog(LOG_LEVEL_DEBUG_MORE,"VALS %s", ebc_buffer);
-          char runstop[10];
           uint8_t alarms;
           if(!strcmp(cmd_vals, ebc_buffer))
             return; //handle echo
           if(strstr(ebc_buffer,PSTR("Running"))) {
-            sscanf( ebc_buffer, "%s %hhd %hhd %hhd %hhd %hhd", runstop, &ebcstatus.humidity, &ebcstatus.temperature, &ebcstatus.t_cond, &ebcstatus.t_cool, &alarms );
+
+            sscanf( &ebc_buffer[8], "%d %d %d %d %d", &ebcstatus.humidity, &ebcstatus.temperature, &ebcstatus.t_cond, &ebcstatus.t_cool, &alarms );
+            AddLog(LOG_LEVEL_DEBUG,"parse running %d %d %d %d %d", ebcstatus.humidity, ebcstatus.temperature, ebcstatus.t_cond, ebcstatus.t_cool, alarms );
             ebcstatus.running = true;
           } else if(ebc_buffer, strstr(ebc_buffer, PSTR("Stand by"))) {
-            sscanf( ebc_buffer, "%s %s %hhd %hhd %hhd %hhd %hhd", runstop, runstop, &ebcstatus.humidity, &ebcstatus.temperature, &ebcstatus.t_cond, &ebcstatus.t_cool, &alarms );
+            sscanf( &ebc_buffer[8], "%d %d %d %d %d", &ebcstatus.humidity, &ebcstatus.temperature, &ebcstatus.t_cond, &ebcstatus.t_cool, &alarms );
+            AddLog(LOG_LEVEL_DEBUG,"parse stndby %d %d %d %d %d", ebcstatus.humidity, ebcstatus.temperature, ebcstatus.t_cond, ebcstatus.t_cool, alarms );
             ebcstatus.running = false;
           }
           ebcCheckAlarms(alarms);
@@ -384,8 +361,11 @@ void ebcProcessData(void) {
             return; //handle echo
           if(ebc_buffer[0] == '?') {
             ResponseCmndError();
-            return;
+            //return;
           }
+          else if(ebc_buffer[0] == '!') 
+            ResponseCmndDone();
+            //return;
           ebcParseDateTime(ebc_buffer);
           ebcParsePeriodicData(&ebc_buffer[15]);
         break;
@@ -393,11 +373,11 @@ void ebcProcessData(void) {
           AddLog(LOG_LEVEL_DEBUG_MORE,"SERNUM %s", ebc_buffer);
           if(!strcmp(cmd_sernum, ebc_buffer))
             return; //handle echo
-          char model;
-          char fill[10];
+          char model[5];
                       //#003628 M 170908.04 Set:76 51 71 01 11 +00 03
                       
-          sscanf( ebc_buffer, "%s %s %s %[^:]:%hhd %hhd %hhd %hhd %hhd %hhd %hhd", ebcstatus.serialNumber, &model, ebcstatus.firmwareVer, &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH, &ebcstatus.alarmdelay, &ebcstatus.interval, &ebcstatus.rhCorrection, &ebcstatus.hysteresis);
+          //sscanf( ebc_buffer, "%s %s %s %[^:]:%d %d %d %d %d %d %d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH, &ebcstatus.alarmdelay, &ebcstatus.interval, &ebcstatus.rhCorrection, &ebcstatus.hysteresis);
+          sscanf( ebc_buffer, "%s %s %s %d %d %d %d %d %d %d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH, &ebcstatus.alarmdelay, &ebcstatus.interval, &ebcstatus.rhCorrection, &ebcstatus.hysteresis);
           break;
         case NEXT_DATE:
           AddLog(LOG_LEVEL_DEBUG_MORE,"DATE %s", ebc_buffer);
@@ -406,12 +386,12 @@ void ebcProcessData(void) {
           break;
         case NEXT_START:
             AddLog(LOG_LEVEL_DEBUG,"START %s", ebc_buffer);
-          if(!strcmp(PSTR("start"), ebc_buffer)) {
+          if(!strcmp(PSTR("start"), ebc_buffer)) { 
             AddLog(LOG_LEVEL_DEBUG,"calling start from ebcprocessdata");
             ebcStartStop(true);
             return; //handle echo
           }
-          if(strstr(ebc_buffer, PSTR("Start"))) {
+          if(strstr(ebc_buffer, PSTR("Start"))) { //23.09.13 22:21 Start
             AddLog(LOG_LEVEL_DEBUG, "start parse datetime");
             ebcParseDateTime(ebc_buffer);
             ebcstatus.running = 1;
@@ -422,7 +402,7 @@ void ebcProcessData(void) {
             if(!strcmp(PSTR("stop"), ebc_buffer)) {
               AddLog(LOG_LEVEL_DEBUG,"calling stop from ebcprocessdata");
               ebcStartStop(false);
-              return; //handle echo
+              //return; //handle echo
               }
             if(strstr(ebc_buffer, PSTR("Stop"))) {
               AddLog(LOG_LEVEL_DEBUG,"stop parse datetime");
@@ -436,7 +416,7 @@ void ebcProcessData(void) {
           break;
         ebcstatus.ebcstate = IDLE;
       }
-    ResponseCmndDone();
+    //ResponseCmndDone();
 }
 
 void ebcInit(uint32_t func)
@@ -467,11 +447,12 @@ void ebcInit(uint32_t func)
 }
 
 void ebcParseDateTime(char * buffer) {
+  AddLog(LOG_LEVEL_DEBUG,"parsing datetime");
   if(strstr(ebc_buffer, ".")) {
-    strncpy(ebcstatus.lastDate, buffer, 8);
+    memcpy(ebcstatus.lastDate, buffer, 8);
     ebcstatus.lastDate[8] = 0;
-    strncpy(ebcstatus.lastTime, buffer+10, 5);
-    ebcstatus.lastTime[5];
+    memcpy(ebcstatus.lastTime, buffer+10, 5);
+    ebcstatus.lastTime[5]  = 0;
     }
 }
 
@@ -490,12 +471,16 @@ void ebcParseDateTime(char * buffer) {
     int8_t  t_cool;
     */
 void ebcParsePeriodicData(char * buffer) {
+  AddLog(LOG_LEVEL_DEBUG,"parsing periodic");
   if (buffer != NULL) {
     if( buffer[0] == 'S' && buffer[1] == 'e') { //periodic dopo "start"
+    AddLog(LOG_LEVEL_DEBUG, "parse periodic: %s", buffer);
       //parte1 Set:76 51 71 01 11 +00 03 
       //parte2 59 27 +28 +28 00
-      sscanf( buffer, "%[^:]:%hhd %hhd %hhd %hhd %hhd %hhd %hhd", &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH, 
+      sscanf( buffer, "%[^:]:%d %d %d %d %d %d", &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH, 
       &ebcstatus.alarmdelay, &ebcstatus.interval, &ebcstatus.rhCorrection);
+      AddLog(LOG_LEVEL_DEBUG,"parse periodic parsed 1pass: sp %d\nL %d\nH %d\ndelay %d\ninterval %d\nrhcorr %d", ebcstatus.setpoint, ebcstatus.setpointHumidityL, ebcstatus.setpointHumidityH, 
+      ebcstatus.alarmdelay, ebcstatus.interval, ebcstatus.rhCorrection);
       return;
     }
 /*    <RH value> <temperature> <t@cond>
@@ -508,8 +493,9 @@ correction>
 */
 else{ 
         //54 28 +28 +29 00
-      sscanf( buffer, "%hhd %hhd %hhd %hhd %hhd", 
+      sscanf( buffer, "%d %d %d %d %d", 
       &ebcstatus.humidity, &ebcstatus.temperature, &ebcstatus.t_cond, &ebcstatus.t_cool, &ebcstatus.alarms);
+      AddLog(LOG_LEVEL_DEBUG,"parse periodic parsed 2pass: hum %d\ntemp %d\nt_cond %d\nt_cool %d\nalarms %d", ebcstatus.humidity, ebcstatus.temperature, ebcstatus.t_cond, ebcstatus.t_cool, ebcstatus.alarms);
       return;
     
   }
@@ -632,7 +618,7 @@ void LscMcWebGetArg(void) {
     uint32_t function = atoi(tmp);
     AddLog(LOG_LEVEL_DEBUG,"%d", function);
     char cmd[30];
-    snprintf_P(cmd, sizeof(cmd), PSTR("ebcsetpoint %d,0,0,0"), function);
+    snprintf_P(cmd, sizeof(cmd), PSTR("ebcsetpoint %d,10,80,0"), function);
     ebcstatus.targetsetpoint = function;
     ExecuteWebCommand(cmd);
     
