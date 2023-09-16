@@ -230,8 +230,9 @@ void CmdSimulate(void) {
 
 void CmdEbcStatus(void) {
 AddLog(LOG_LEVEL_INFO,
-"inited %d\nsetpoint %d\ntarget setpoint %d\nsetpointH %d\nsetpointL %d\nAlarm delay %d\ndelay %d\nrhCorrection %d\nhysteresis %d\nhumidity %d\ntemperature %d\nSerial number %s\nFW ver %s",
- ebcstatus.inited, ebcstatus.setpoint, ebcstatus.targetsetpoint, ebcstatus.setpointHumidityH, ebcstatus.setpointHumidityL, ebcstatus.alarmdelay, ebcstatus.interval, ebcstatus.rhCorrection,
+"date %s\ntime %s\ninited %d\nsetpoint %d\ntarget setpoint %d\nsetpointH %d\nsetpointL %dt_cool %d\nt_cond %d\nAlarm delay %d\ndelay %d\nrhCorrection %d\nhysteresis %d\nhumidity %d\ntemperature %d\nSerial number %s\nFW ver %s",
+ ebcstatus.lastDate, ebcstatus.lastTime, ebcstatus.inited, ebcstatus.setpoint, ebcstatus.targetsetpoint, ebcstatus.setpointHumidityH, ebcstatus.setpointHumidityL, 
+ ebcstatus.t_cool, ebcstatus.t_cond, ebcstatus.alarmdelay, ebcstatus.interval, ebcstatus.rhCorrection,
 ebcstatus.hysteresis, ebcstatus.humidity, ebcstatus.temperature, ebcstatus.serialNumber, ebcstatus.firmwareVer
 );
   ResponseCmndDone();
@@ -302,11 +303,14 @@ bool ebcAddData(char nextChar)
 {
     // Buffer position
     static uint8_t currentIndex = 0;
-    if (0x0D == nextChar) {
-      ebc_buffer[currentIndex] = '\0';
-      currentIndex = 0;
-      return true;
-    }
+    if (0x0D == nextChar) 
+      if( 0 != currentIndex)
+      {
+        ebc_buffer[currentIndex] = '\0';
+        currentIndex = 0;
+        return true;
+      }
+      else return false;
     if (0x0A == nextChar)
         return false;
 
@@ -338,13 +342,11 @@ void ebcProcessData(void) {
     AddLog(LOG_LEVEL_DEBUG,PSTR("Line from serial: %s"),ebc_buffer);
     switch (ebcstatus.ebcstate) {
         case NEXT_VALS:
-        
           AddLog(LOG_LEVEL_DEBUG_MORE,"VALS %s", ebc_buffer);
           uint8_t alarms;
           if(!strcmp(cmd_vals, ebc_buffer))
             return; //handle echo
           if(strstr(ebc_buffer,PSTR("Running"))) {
-
             sscanf( &ebc_buffer[8], "%d %d %d %d %d", &ebcstatus.humidity, &ebcstatus.temperature, &ebcstatus.t_cond, &ebcstatus.t_cool, &alarms );
             AddLog(LOG_LEVEL_DEBUG,"parse running %d %d %d %d %d", ebcstatus.humidity, ebcstatus.temperature, ebcstatus.t_cond, ebcstatus.t_cool, alarms );
             ebcstatus.running = true;
@@ -361,23 +363,30 @@ void ebcProcessData(void) {
             return; //handle echo
           if(ebc_buffer[0] == '?') {
             ResponseCmndError();
-            //return;
+            break;
           }
-          else if(ebc_buffer[0] == '!') 
+          else if(ebc_buffer[0] == '!') {
             ResponseCmndDone();
-            //return;
+            break;
+          }
           ebcParseDateTime(ebc_buffer);
-          ebcParsePeriodicData(&ebc_buffer[15]);
+          ebcParsePeriodicData(ebc_buffer);
         break;
         case NEXT_SERNUM:
           AddLog(LOG_LEVEL_DEBUG_MORE,"SERNUM %s", ebc_buffer);
           if(!strcmp(cmd_sernum, ebc_buffer))
             return; //handle echo
           char model[5];
+          char fill[10];
                       //#003628 M 170908.04 Set:76 51 71 01 11 +00 03
                       
-          //sscanf( ebc_buffer, "%s %s %s %[^:]:%d %d %d %d %d %d %d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH, &ebcstatus.alarmdelay, &ebcstatus.interval, &ebcstatus.rhCorrection, &ebcstatus.hysteresis);
-          sscanf( ebc_buffer, "%s %s %s %d %d %d %d %d %d %d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH, &ebcstatus.alarmdelay, &ebcstatus.interval, &ebcstatus.rhCorrection, &ebcstatus.hysteresis);
+          sscanf( ebc_buffer, "%s %s %s %[^:]:%d %d %d %d %d %d %d", ebcstatus.serialNumber, model, fill, ebcstatus.firmwareVer, &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH, &ebcstatus.alarmdelay, &ebcstatus.interval, &ebcstatus.rhCorrection, &ebcstatus.hysteresis);
+          /*sscanf( ebc_buffer, "%s %s %s", ebcstatus.serialNumber, model, ebcstatus.firmwareVer);
+          AddLog(LOG_LEVEL_DEBUG_MORE,"%s %s %s", ebcstatus.serialNumber, model, ebcstatus.firmwareVer);
+          sscanf( ebc_buffer, "%s %s %s %[^:]:%d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, &ebcstatus.setpoint);
+          AddLog(LOG_LEVEL_DEBUG_MORE,"%s %s %s %d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, ebcstatus.setpoint);
+          sscanf( ebc_buffer, "%s %s %s %[^:]:%d %d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, &ebcstatus.setpoint, &ebcstatus.setpointHumidityL);
+          AddLog(LOG_LEVEL_DEBUG_MORE,"%s %s %s %d %d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, ebcstatus.setpoint, ebcstatus.setpointHumidityL);*/
           break;
         case NEXT_DATE:
           AddLog(LOG_LEVEL_DEBUG_MORE,"DATE %s", ebc_buffer);
@@ -401,6 +410,7 @@ void ebcProcessData(void) {
             AddLog(LOG_LEVEL_DEBUG,"STOP %s", ebc_buffer);
             if(!strcmp(PSTR("stop"), ebc_buffer)) {
               AddLog(LOG_LEVEL_DEBUG,"calling stop from ebcprocessdata");
+              ebc_buffer[0] = 0;
               ebcStartStop(false);
               //return; //handle echo
               }
@@ -451,8 +461,9 @@ void ebcParseDateTime(char * buffer) {
   if(strstr(ebc_buffer, ".")) {
     memcpy(ebcstatus.lastDate, buffer, 8);
     ebcstatus.lastDate[8] = 0;
-    memcpy(ebcstatus.lastTime, buffer+10, 5);
+    memcpy(ebcstatus.lastTime, buffer+9, 5);
     ebcstatus.lastTime[5]  = 0;
+    AddLog(LOG_LEVEL_DEBUG,"date %s", ebcstatus.lastDate);
     }
 }
 
@@ -471,26 +482,19 @@ void ebcParseDateTime(char * buffer) {
     int8_t  t_cool;
     */
 void ebcParsePeriodicData(char * buffer) {
-  AddLog(LOG_LEVEL_DEBUG,"parsing periodic");
+  AddLog(LOG_LEVEL_DEBUG,"parsing periodic %s", buffer);
   if (buffer != NULL) {
-    if( buffer[0] == 'S' && buffer[1] == 'e') { //periodic dopo "start"
+    if( buffer[15] == 'S' && buffer[16] == 'e') { //periodic dopo "start"
     AddLog(LOG_LEVEL_DEBUG, "parse periodic: %s", buffer);
       //parte1 Set:76 51 71 01 11 +00 03 
       //parte2 59 27 +28 +28 00
-      sscanf( buffer, "%[^:]:%d %d %d %d %d %d", &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH, 
+      char fill[10];
+      sscanf( &buffer[19], "%d %d %d %d %d %d", fill, &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH, 
       &ebcstatus.alarmdelay, &ebcstatus.interval, &ebcstatus.rhCorrection);
       AddLog(LOG_LEVEL_DEBUG,"parse periodic parsed 1pass: sp %d\nL %d\nH %d\ndelay %d\ninterval %d\nrhcorr %d", ebcstatus.setpoint, ebcstatus.setpointHumidityL, ebcstatus.setpointHumidityH, 
       ebcstatus.alarmdelay, ebcstatus.interval, ebcstatus.rhCorrection);
       return;
     }
-/*    <RH value> <temperature> <t@cond>
-<t@cool> <alarm byte> Set: <setvalue>
-<lower alarm limit> <upper alarm limit>
-<1.alarm delay> <interval> <+/-RH
-correction>
-    54 28 +28 +29 00 Set:15 10
-25 01 01 +00
-*/
 else{ 
         //54 28 +28 +29 00
       sscanf( buffer, "%d %d %d %d %d", 
@@ -500,6 +504,7 @@ else{
     
   }
 }
+
 }
 void MyProjectInit()
 {
@@ -562,10 +567,14 @@ void LscMcAddFuctionButtons(void) {
       WSContentSend_P(HTTP_TABLE100);
       WSContentSend_P("<tr><td style='width:32%;text-align:center;font-weight:normal;font-size:28px'>Desiderato: %d</td></tr>", ebcstatus.targetsetpoint);
       WSContentSend_P("<tr>");
-      WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&ebc=1\");'>%s</button></td>"), 50,   // &ebc is related to WebGetArg("lsc", tmp, sizeof(tmp));
+      WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&ebc=1\");'>%s</button></td>"), 50,   // &ebc is related to WebGetArg("ebc", tmp, sizeof(tmp));
       PSTR("Avvia"));
-      WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&ebc=0\");'>%s</button></td>"), 50,   // &ebc is related to WebGetArg("lsc", tmp, sizeof(tmp));
+      WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&ebc=0\");'>%s</button></td>"), 50,   // &ebc is related to WebGetArg("ebc", tmp, sizeof(tmp));
       PSTR("Ferma"));
+      WSContentSend_P("</tr><tr>");
+      WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&ebcrfsh=1\");'>%s</button></td>"), 50,   // &ebc is related to WebGetArg("ebc", tmp, sizeof(tmp));
+      PSTR("Aggiorna"));
+      
       WSContentSend_P(PSTR("</tr></table>"));
   
   /*WSContentSend_P(HTTP_TABLE100);
@@ -621,7 +630,12 @@ void LscMcWebGetArg(void) {
     snprintf_P(cmd, sizeof(cmd), PSTR("ebcsetpoint %d,10,80,0"), function);
     ebcstatus.targetsetpoint = function;
     ExecuteWebCommand(cmd);
-    
+  }
+  WebGetArg(PSTR("ebcrfsh"), tmp, sizeof(tmp));  // 0 - 7 functions
+  if(strlen(tmp)) {
+    AddLog(LOG_LEVEL_DEBUG,"refresh");
+    ExecuteWebCommand("ebcvals");
+    ExecuteWebCommand("ebcsernum");
   }
 }
 
@@ -640,10 +654,16 @@ bool Xdrv100(uint32_t function) {
   else if (ebcstatus.inited == EBC_INITED ) {
       switch (function) {
         case FUNC_EVERY_SECOND:
-          if(refresh_interval % 3 == 0) {
-            //ExecuteWebCommand("ebcvals");
-            //ExecuteWebCommand("ebcsernum");
+          /*if(refresh_interval % 6 == 0) {
+            ebcSerial->write(cmd_vals,sizeof(cmd_vals));
+            ebcstatus.ebcstate = NEXT_VALS;
           }
+          if(refresh_interval % 12 == 0) {
+            ebcSerial->write(cmd_sernum,sizeof(cmd_sernum));
+            ebcstatus.ebcstate = NEXT_SERNUM;
+          }
+          refresh_interval++;
+          */
           break;
         case FUNC_WEB_SENSOR:
           EBCShow(0);
@@ -663,11 +683,13 @@ bool Xdrv100(uint32_t function) {
               break;
               case NEXT_STOP:
                 ebcSerial->write("11.06.08 13:30 Stop\r");
-                ebcSerial->write("54 28 +28 +29 00 Set:15 10 25 01 01 +00\r");
+                ebcSerial->write("54 28 +28 +29 00\r");
+                ebcSerial->write("Set:15 10 25 01 01 +00\r");
               break;
               case NEXT_START:
                 ebcSerial->write("11.06.08 13:30 Start\r");
-                ebcSerial->write("Set:15 10 25 01 01 +00 53 28 +28 +29 00\r");
+                ebcSerial->write("Set:15 10 25 01 01 +00\r");
+                ebcSerial->write("53 28 +28 +29 00\r");
               break;
               case NEXT_SETPOINT:
                 ebcSerial->write("11.06.08 13:12\r");
