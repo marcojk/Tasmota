@@ -380,7 +380,7 @@ void ebcProcessData(void) {
           char fill[10];
                       //#003628 M 170908.04 Set:76 51 71 01 11 +00 03
                       
-          sscanf( ebc_buffer, "%s %s %s %[^:]:%d %d %d %d %d %d %d", ebcstatus.serialNumber, model, fill, ebcstatus.firmwareVer, &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH, &ebcstatus.alarmdelay, &ebcstatus.interval, &ebcstatus.rhCorrection, &ebcstatus.hysteresis);
+          sscanf( ebc_buffer, "%s %s %s %[^:]:%d %d %d %d %d %d %d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, fill, &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH, &ebcstatus.alarmdelay, &ebcstatus.interval, &ebcstatus.rhCorrection, &ebcstatus.hysteresis);
           /*sscanf( ebc_buffer, "%s %s %s", ebcstatus.serialNumber, model, ebcstatus.firmwareVer);
           AddLog(LOG_LEVEL_DEBUG_MORE,"%s %s %s", ebcstatus.serialNumber, model, ebcstatus.firmwareVer);
           sscanf( ebc_buffer, "%s %s %s %[^:]:%d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, &ebcstatus.setpoint);
@@ -545,6 +545,7 @@ void EBCShow(bool json) {
         ebcstatus.humidity, ebcstatus.temperature, ebcstatus.setpoint, ebcstatus.rhCorrection,
         ebcstatus.hysteresis,  ebcstatus.serialNumber, ebcstatus.firmwareVer, ebcstatus.running ? PSTR("Attivo") : PSTR("Arrestato"));
       WSContentSend_P(HTTP_TABLE100);
+      WSContentSend_P("<tr><td style='width:32%;text-align:center;font-weight:normal;font-size:28px'>Desiderato: %d</td></tr>", ebcstatus.targetsetpoint == 0 ? ebcstatus.setpoint : ebcstatus.targetsetpoint);
       WSContentSend_P(PSTR("<tr>"));
       WSContentSend_P(HTTP_MSG_SLIDER_GRADIENT,  // Cold Warm
         PSTR("a"),             // a - Unique HTML id
@@ -564,8 +565,7 @@ void EBCShow(bool json) {
 
 
 void LscMcAddFuctionButtons(void) {
-      WSContentSend_P(HTTP_TABLE100);
-      WSContentSend_P("<tr><td style='width:32%;text-align:center;font-weight:normal;font-size:28px'>Desiderato: %d</td></tr>", ebcstatus.targetsetpoint);
+      WSContentSend_P(HTTP_TABLE100);      
       WSContentSend_P("<tr>");
       WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&ebc=1\");'>%s</button></td>"), 50,   // &ebc is related to WebGetArg("ebc", tmp, sizeof(tmp));
       PSTR("Avvia"));
