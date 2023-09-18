@@ -1,4 +1,4 @@
-/*
+/*auok qgfd dpfp szxh
   xdrv_100_ebcminiclima.ino EBC10/12 support
 */
 #ifndef USE_EBCMINICLIMA
@@ -42,7 +42,7 @@ const char cmd_setpoint[] PROGMEM ="#setPoint\r";
 #define D_PRFX_EBCMINICLIMA "EBC"
 
 enum EBC_MODEL { EBC_10_11_12_MASTER, EBC_10_11_12_SLAVE, EBCEASY_MASTER, EBCEASY_SLAVE };
-enum EBC_STATE { NEXT_SERNUM, NEXT_VALS, NEXT_SETPOINT, NEXT_DATE, NEXT_TIME, NEXT_DUMP, NEXT_START, NEXT_STOP, IDLE};
+enum EBC_STATE { NEXT_SERNUM, NEXT_VALS, NEXT_SETPOINT, NEXT_DATE, NEXT_TIME, NEXT_DUMP, NEXT_START, NEXT_STOP, NEXT_OPHOURS, NEXT_REFRESH, IDLE};
 
 struct EBC_MODEL_MAP {
 	enum EBC_MODEL	 linkMode;
@@ -109,6 +109,7 @@ struct ebcStatus {
     uint32_t temperature;
     int32_t  t_cond;
     int32_t  t_cool;
+    uint32_t ophours;
     char serialNumber[SERIAL_NUMBER_LEN];
     char firmwareVer[FIRMWARE_VER_LEN];
     enum EBC_STATE ebcstate;
@@ -144,7 +145,7 @@ void CmdVals(void) {
   ebcSerial->write(cmd_vals, strlen(cmd_vals));
   ebcstatus.ebcstate = NEXT_VALS;
   AddLog(LOG_LEVEL_DEBUG, "next state VALS %d", ebcstatus.ebcstate);
-  ResponseCmndDone();
+  //ResponseCmndDone();
 }
 
 void CmdSetPoint(void) {
@@ -218,7 +219,7 @@ void CmdSernum(void) {
   AddLog(LOG_LEVEL_INFO, cmd_sernum);
   ebcSerial->write(cmd_sernum, strlen(cmd_sernum));
   ebcstatus.ebcstate = NEXT_SERNUM;
-  ResponseCmndDone();
+  //ResponseCmndDone();
 }
 
 void CmdSimulate(void) {
@@ -339,6 +340,7 @@ void ebcStartStop( bool state) {
 }
 
 void ebcProcessData(void) {
+    bool refresh_pending = 0;
     AddLog(LOG_LEVEL_DEBUG,PSTR("Line from serial: %s"),ebc_buffer);
     switch (ebcstatus.ebcstate) {
         case NEXT_VALS:
@@ -387,6 +389,11 @@ void ebcProcessData(void) {
           AddLog(LOG_LEVEL_DEBUG_MORE,"%s %s %s %d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, ebcstatus.setpoint);
           sscanf( ebc_buffer, "%s %s %s %[^:]:%d %d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, &ebcstatus.setpoint, &ebcstatus.setpointHumidityL);
           AddLog(LOG_LEVEL_DEBUG_MORE,"%s %s %s %d %d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, ebcstatus.setpoint, ebcstatus.setpointHumidityL);*/
+          if(refresh_pending) {
+            CmdVals();
+            ebcstatus.ebcstate = NEXT_VALS;
+            return;
+          }
           break;
         case NEXT_DATE:
           AddLog(LOG_LEVEL_DEBUG_MORE,"DATE %s", ebc_buffer);
@@ -419,6 +426,26 @@ void ebcProcessData(void) {
               ebcParseDateTime(ebc_buffer);
               ebcstatus.running = 0;
             }
+            break;
+          case NEXT_OPHOURS:
+          //ophours
+          //009589
+            AddLog(LOG_LEVEL_DEBUG,"OPHOURS %s", ebc_buffer);
+            if(!strcmp(PSTR("ophours"), ebc_buffer)) 
+              return;
+            if(strlen(ebc_buffer) == 6)
+              sscanf(ebc_buffer,"%d", &ebcstatus.ophours);
+            break;
+          case NEXT_REFRESH:
+            if(refresh_pending)
+            {
+              CmdSernum();
+              refresh_pending = false;
+            } else {
+              CmdVals();
+              refresh_pending = true;
+            }
+
             break;
         default:
           ebcParseDateTime(ebc_buffer);
@@ -467,20 +494,6 @@ void ebcParseDateTime(char * buffer) {
     }
 }
 
-/*    bool simulator;
-    bool inited;
-    uint8_t setpoint;
-    uint8_t setpointHumidityH;
-    uint8_t setpointHumidityL;
-    uint8_t alarmdelay;
-    uint8_t interval;
-    int8_t  rhCorrection;
-    uint8_t hysteresis;
-    uint8_t humidity;
-    uint8_t temperature;
-    int8_t  t_cond;
-    int8_t  t_cool;
-    */
 void ebcParsePeriodicData(char * buffer) {
   AddLog(LOG_LEVEL_DEBUG,"parsing periodic %s", buffer);
   if (buffer != NULL) {
@@ -541,9 +554,9 @@ void EBCShow(bool json) {
       ResponseAppend_P(PSTR("\"Temperature\":%d,"), ebcstatus.temperature);
       ResponseJsonEnd();
       } else {
-        WSContentSend_PD("{s}Umidità rilevata{m}%d{e}{s}Temperatura{m}%d{e}{s}Setpoint{m}%d{e}{s}Correzione RH{m}%d{e}{s}Hysteresis{m}%d{e}{s}Serial number{m}%s{e}{s}FW version{m}%s{e}{s}Stato{m}%s{e}",
+        WSContentSend_PD("{s}Umidità rilevata{m}%d{e}{s}Temperatura{m}%d{e}{s}Setpoint{m}%d{e}{s}Correzione RH{m}%d{e}{s}Hysteresis{m}%d{e}{s}Serial number{m}%s{e}{s}FW version{m}%s{e}{s}Ore totali{m}%d{e}{s}Stato{m}%s{e}",
         ebcstatus.humidity, ebcstatus.temperature, ebcstatus.setpoint, ebcstatus.rhCorrection,
-        ebcstatus.hysteresis,  ebcstatus.serialNumber, ebcstatus.firmwareVer, ebcstatus.running ? PSTR("Attivo") : PSTR("Arrestato"));
+        ebcstatus.hysteresis,  ebcstatus.serialNumber, ebcstatus.firmwareVer, ebcstatus.ophours, ebcstatus.running ? PSTR("Attivo") : PSTR("Arrestato"));
       WSContentSend_P(HTTP_TABLE100);
       WSContentSend_P("<tr><td style='width:32%;text-align:center;font-weight:normal;font-size:28px'>Desiderato: %d</td></tr>", ebcstatus.targetsetpoint == 0 ? ebcstatus.setpoint : ebcstatus.targetsetpoint);
       WSContentSend_P(PSTR("<tr>"));
@@ -654,16 +667,18 @@ bool Xdrv100(uint32_t function) {
   else if (ebcstatus.inited == EBC_INITED ) {
       switch (function) {
         case FUNC_EVERY_SECOND:
-          /*if(refresh_interval % 6 == 0) {
-            ebcSerial->write(cmd_vals,sizeof(cmd_vals));
-            ebcstatus.ebcstate = NEXT_VALS;
+          if(refresh_interval % 6 == 0) {
+            CmdVals();  
+            //ebcSerial->write(cmd_vals,sizeof(cmd_vals));
+            //ebcstatus.ebcstate = NEXT_VALS;
           }
-          if(refresh_interval % 12 == 0) {
-            ebcSerial->write(cmd_sernum,sizeof(cmd_sernum));
-            ebcstatus.ebcstate = NEXT_SERNUM;
+          if(refresh_interval % 8 == 0) {
+            CmdSernum();
+            //ebcSerial->write(cmd_sernum,sizeof(cmd_sernum));
+            //ebcstatus.ebcstate = NEXT_SERNUM;
           }
           refresh_interval++;
-          */
+          
           break;
         case FUNC_WEB_SENSOR:
           EBCShow(0);
