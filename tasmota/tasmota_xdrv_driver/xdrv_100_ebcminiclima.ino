@@ -37,6 +37,7 @@ const char cmd_stop[] PROGMEM ="stop\r";
 const char cmd_vals[] PROGMEM ="vals\r";
 const char cmd_date[] PROGMEM ="date\r";
 const char cmd_time[] PROGMEM ="time\r";
+const char cmd_ophours[] PROGMEM ="ophours\r";
 const char cmd_setpoint[] PROGMEM ="#setPoint\r";
 
 #define D_PRFX_EBCMINICLIMA "EBC"
@@ -96,6 +97,7 @@ struct ebcStatus {
     char lastTime[6]; //11:59
     bool running;
     bool simulator;
+    bool requestpending;
     uint8_t inited;
     uint32_t setpoint;
     uint32_t targetsetpoint;
@@ -145,6 +147,13 @@ void CmdVals(void) {
   ebcSerial->write(cmd_vals, strlen(cmd_vals));
   ebcstatus.ebcstate = NEXT_VALS;
   AddLog(LOG_LEVEL_DEBUG, "next state VALS %d", ebcstatus.ebcstate);
+  //ResponseCmndDone();
+}
+
+void CmdOphours(void) {
+  ebcSerial->write(cmd_ophours, strlen(cmd_ophours));
+  ebcstatus.ebcstate = NEXT_OPHOURS;
+  AddLog(LOG_LEVEL_DEBUG, "next state OPHOURS %d", ebcstatus.ebcstate);
   //ResponseCmndDone();
 }
 
@@ -264,6 +273,9 @@ void CmdSendMQTT(void) {
  * Tasmota Functions
 \*********************************************************************************************/
 //  if (*mserv == '*') { mserv = xPSTR(EMAIL_SERVER); }
+void ebcSendEmail (char *buffer) {
+
+}
 
 void ebcSendMailAlarms ()
 {
@@ -428,27 +440,15 @@ void ebcProcessData(void) {
             }
             break;
           case NEXT_OPHOURS:
-          //ophours
-          //009589
             AddLog(LOG_LEVEL_DEBUG,"OPHOURS %s", ebc_buffer);
             if(!strcmp(PSTR("ophours"), ebc_buffer)) 
               return;
             if(strlen(ebc_buffer) == 6)
               sscanf(ebc_buffer,"%d", &ebcstatus.ophours);
             break;
-          case NEXT_REFRESH:
-            if(refresh_pending)
-            {
-              CmdSernum();
-              refresh_pending = false;
-            } else {
-              CmdVals();
-              refresh_pending = true;
-            }
-
-            break;
         default:
           ebcParseDateTime(ebc_buffer);
+          ebcParseAlarms(ebc_buffer);
           ebcParsePeriodicData(ebc_buffer);
           break;
         ebcstatus.ebcstate = IDLE;
@@ -493,7 +493,30 @@ void ebcParseDateTime(char * buffer) {
     AddLog(LOG_LEVEL_DEBUG,"date %s", ebcstatus.lastDate);
     }
 }
+void ebcParseAlarms(char * buffer) {
+  AddLog(LOG_LEVEL_DEBUG,"parse alarms");
+  if(buffer) {
+    char *p;   
+    char *str = strtok_r(buffer, ", ", &p); 
+    if(!str)
+      return;
+    str = strtok_r(buffer, ", ", &p); 
+    if(!str)
+      return;
+    str = strtok_r(buffer, ", ", &p);  
+    if(strcmp(str,PSTR("Alarm"))) {
+      char *pnt = strstr(buffer, "Alarm");
+      AddLog(LOG_LEVEL_DEBUG,"Parsed alarm: %d", pnt);
+      ebcSendEmail(pnt);
+    } 
+    else if (strcmp(str,PSTR("Signal"))) {      
+      char *pnt = strstr(buffer, "Signal");
+      AddLog(LOG_LEVEL_DEBUG,"Parsed signal: %d", pnt);
+      ebcSendEmail(pnt);
+    }
 
+  }
+}
 void ebcParsePeriodicData(char * buffer) {
   AddLog(LOG_LEVEL_DEBUG,"parsing periodic %s", buffer);
   if (buffer != NULL) {
@@ -646,9 +669,12 @@ void LscMcWebGetArg(void) {
   }
   WebGetArg(PSTR("ebcrfsh"), tmp, sizeof(tmp));  // 0 - 7 functions
   if(strlen(tmp)) {
-    AddLog(LOG_LEVEL_DEBUG,"refresh");
-    ExecuteWebCommand("ebcvals");
-    ExecuteWebCommand("ebcsernum");
+    ebcstatus.requestpending = true;
+    /*  AddLog(LOG_LEVEL_DEBUG,"refresh");
+      ExecuteWebCommand("ebcvals");
+      ExecuteWebCommand("ebcsernum");
+      ebcstatus.requestpending = false;
+      */
   }
 }
 
@@ -667,6 +693,7 @@ bool Xdrv100(uint32_t function) {
   else if (ebcstatus.inited == EBC_INITED ) {
       switch (function) {
         case FUNC_EVERY_SECOND:
+        if(!ebcstatus.requestpending){
           if(refresh_interval % 6 == 0) {
             CmdVals();  
             //ebcSerial->write(cmd_vals,sizeof(cmd_vals));
@@ -677,6 +704,11 @@ bool Xdrv100(uint32_t function) {
             //ebcSerial->write(cmd_sernum,sizeof(cmd_sernum));
             //ebcstatus.ebcstate = NEXT_SERNUM;
           }
+        }
+        else {
+          CmdVals();
+          ebcstatus.requestpending = false;
+        }
           refresh_interval++;
           
           break;
