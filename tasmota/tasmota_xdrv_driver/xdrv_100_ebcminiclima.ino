@@ -15,7 +15,6 @@
 #define XDRV_100 100
 const char HTTP_BTN_MENU_MI32[] PROGMEM = "<p><form action='m32' method='get'><button>EBC Dashboard</button></form></p>";
 
-
 #ifndef nitems
 #define nitems(_a)		(sizeof((_a)) / sizeof((_a)[0]))
 #endif
@@ -84,6 +83,7 @@ TasmotaSerial *ebcSerial = nullptr;
 
 // This variable will be set to true after initialization
 bool initSuccess = false;
+static uint32_t lastMail;
 
 char * payload = nullptr;
 size_t payload_size = 100;
@@ -139,10 +139,11 @@ const char MyProjectCommands[] PROGMEM = D_PRFX_EBCMINICLIMA "|"
   "status|"
   "setpoint|"
   "alarm|"
+  "mail|"
   "SendMQTT";
 
 void (* const MyProjectCommand[])(void) PROGMEM = {
-  &CmdVals, &CmdSernum, &CmdDate, &CmdStart, &CmdStop, &CmdSimulate, &CmdEbcStatus, &CmdSetPoint, &CmdAlarm, &CmdSendMQTT};
+  &CmdVals, &CmdSernum, &CmdDate, &CmdStart, &CmdStop, &CmdSimulate, &CmdEbcStatus, &CmdSetPoint, &CmdAlarm, &CmdSetEmail, &CmdSendMQTT};
 
 void CmdVals(void) {
   ebcSerial->write(cmd_vals, strlen(cmd_vals));
@@ -209,6 +210,42 @@ void CmdSetPoint(void) {
   //ebcSerial->write(cmd_date, strlen(cmd_setpoint));
   ebcstatus.ebcstate = NEXT_SETPOINT;
   ResponseCmndDone();
+}
+
+void CmdSetEmail(void) {
+  char cmd[140]="[";
+   if (XdrvMailbox.data_len > 0) {
+    AddLog(LOG_LEVEL_DEBUG,"email data_len %d", XdrvMailbox.data_len);
+/*
+    char *p;
+    uint32_t i = 0;
+    char param[4][30];
+    //for (param[i] = strtok_r(XdrvMailbox.data, ", ", &p); param[i] && i < 4; param[i] = strtok_r(nullptr, ", ", &p)) {
+      for ( strcpy(param[i],strtok_r(XdrvMailbox.data, ",", &p)); param[i][0] ; strcpy( param[i], strtok_r(NULL, ",", &p))) {
+        AddLog(LOG_LEVEL_DEBUG,"%s", param[i]);
+      i++;
+    }
+    */
+    //strncpy(cmd, "[\0", 3);
+    strncat(cmd, XdrvMailbox.data, sizeof(cmd)-3);
+    strncat(cmd, ":", 1);
+    SettingsUpdateText(SET_EBC_SENDMAIL, cmd);
+    AddLog(LOG_LEVEL_DEBUG, "email new param %s", SettingsText(SET_EBC_SENDMAIL));
+      /*
+      param1 smtp.gmail.com:465
+      param2 marcorizza79
+      param3 zmutbaqpwmgdknbw
+      param4 marcorizza79@gmail.com
+      */
+      //[smtp.gmail.com:465:marcorizza79:zmutbaqpwmgdknbw:marcorizza79@gmail.com:
+         // smtp.gmail.com:465:marcorizza79:zmutbaqpwmgdknbw:marcorizza79@gmail.com:marco_jk@hotmail.com
+
+ 
+ // ResponseCmndDone();
+}
+else if(XdrvMailbox.data_len == 0) {
+  AddLog(LOG_LEVEL_INFO, "smtpserver:port:user:pwd:from:to:subject %s", SettingsText(SET_EBC_SENDMAIL));
+}
 }
 
 void CmdDate(void) {
@@ -281,7 +318,7 @@ void CmdSendMQTT(void) {
 \*********************************************************************************************/
 //  if (*mserv == '*') { mserv = xPSTR(EMAIL_SERVER); }
 void ebcSendEmail (char *buffer) {
-  static uint32_t lastMail = millis();
+  
   if( millis() - lastMail < 500) {
     AddLog(LOG_LEVEL_DEBUG,"antibouncing email");
     return;
@@ -290,19 +327,21 @@ void ebcSendEmail (char *buffer) {
     AddLog(LOG_LEVEL_DEBUG,"Allarme non valido");
     return;
   }
-  if(0){ //implement persistent data
-
-  }
-  else { //use default
     //"[smtp.gmail.com:465:marcorizza79:zmutbaqpwmgdknbw:marcorizza79@gmail.com:marco_jk@hotmail.com:test]"
-    char mailmsg[MAIL_MSG_MAX_SIZE] = "[smtp.gmail.com:465:marcorizza79:zmutbaqpwmgdknbw:marcorizza79@gmail.com:marco_jk@hotmail.com:";
+    char mailmsg[MAIL_MSG_MAX_SIZE];
+    char *pnt;
+    pnt = SettingsText(SET_EBC_SENDMAIL);
+    strcpy(mailmsg, pnt);
+    AddLog(LOG_LEVEL_DEBUG,"0 %s", pnt);
+    AddLog(LOG_LEVEL_DEBUG,"1 %s", mailmsg);
+    strcat(mailmsg,SettingsText(SET_DEVICENAME));
+    strncat(mailmsg,":",1);
     strncat(mailmsg, buffer, 40);
+    AddLog(LOG_LEVEL_DEBUG,"2 %s", mailmsg);
     strncat(mailmsg,"]",1);
+    AddLog(LOG_LEVEL_DEBUG,"sending mail %s, len %d", mailmsg, strlen(mailmsg));
     SendMail(mailmsg);
   }
-  
-
-}
 
 void ebcSendMailAlarms ()
 {
@@ -468,13 +507,13 @@ void ebcProcessData(void) {
               ebcstatus.running = 0;
             }
             break;
-          case NEXT_OPHOURS:
-            AddLog(LOG_LEVEL_DEBUG,"OPHOURS %s", ebc_buffer);
-            if(!strcmp(PSTR("ophours"), ebc_buffer)) 
-              return;
-            if(strlen(ebc_buffer) == 6)
-              sscanf(ebc_buffer,"%d", &ebcstatus.ophours);
-            break;
+        case NEXT_OPHOURS:
+          AddLog(LOG_LEVEL_DEBUG,"OPHOURS %s", ebc_buffer);
+          if(!strcmp(PSTR("ophours"), ebc_buffer)) 
+            return;
+          if(strlen(ebc_buffer) == 6)
+            sscanf(ebc_buffer,"%d", &ebcstatus.ophours);
+          break;
         default:
           ebcParseDateTime(ebc_buffer);
           ebcParseAlarms(ebc_buffer);
@@ -507,6 +546,10 @@ void ebcInit(uint32_t func)
     else AddLog(LOG_LEVEL_DEBUG, PSTR("EBC ser NOT started"));
     }
     if (FUNC_INIT == func) {
+      if( 0 == strlen(SettingsText(SET_EBC_SENDMAIL)) ) {
+        SettingsUpdateText(SET_EBC_SENDMAIL, "[smtp.gmail.com:465:marcorizza79:zmutbaqpwmgdknbw:marcorizza79@gmail.com:");
+      }
+      lastMail = millis();
       //ExecuteWebCommand(PSTR("ebcvals"));
       //ExecuteWebCommand(PSTR("ebcsernum"));
     }
