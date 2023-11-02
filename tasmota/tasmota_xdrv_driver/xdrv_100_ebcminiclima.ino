@@ -436,6 +436,7 @@ void ebcProcessData(void) {
             AddLog(LOG_LEVEL_DEBUG,"parse stndby %d %d %d %d %d", ebcstatus.humidity, ebcstatus.temperature, ebcstatus.t_cond, ebcstatus.t_cool, alarms );
             ebcstatus.running = false;
           }
+          ebcstatus.requestpending = false;
           ebcCheckAlarms(alarms);
           break;
         case NEXT_SETPOINT:
@@ -473,6 +474,7 @@ void ebcProcessData(void) {
             ebcstatus.ebcstate = NEXT_VALS;
             return;
           }
+          ebcstatus.requestpending = false;
           break;
         case NEXT_DATE:
           AddLog(LOG_LEVEL_DEBUG_MORE,"DATE %s", ebc_buffer);
@@ -657,11 +659,26 @@ void MyProjectInit()
 void EBCShow(bool json) {
   if (ebcstatus.inited == EBC_INITED) {
       if (json) {
-      //  ResponseAppend_P(PSTR(",\"EBC miniClima\":{\"" D_JSON_VOLTAGE "\":%d}"), &magic);
-      ResponseAppend_P(PSTR(",\"EBC miniClima\":{"));
-      ResponseAppend_P(PSTR("\"Humidity\":%d,"), ebcstatus.humidity);
-      ResponseAppend_P(PSTR("\"Temperature\":%d,"), ebcstatus.temperature);
-      ResponseJsonEnd();
+          /*if (humidity > 100) { humidity = 100.0f; }
+          if (humidity < 0) { humidity = 0.1f; }
+          Dht[sensor].h = ConvertHumidity(humidity);
+          Dht[sensor].t = ConvertTemp(temperature);*/
+          
+          //ResponseAppend_P( PSTR(",\"" D_JSON_TEMPERATURE "\":\"%*f\""), Settings->flag2.temperature_resolution, ebcstatus.temperature);
+          //ResponseAppend_P( PSTR(",\"" D_JSON_HUMIDITY "\":\"%*f\""), Settings->flag2.humidity_resolution, ebcstatus.humidity);
+
+          //int ResponseAppendTHD(float f_temperature, float f_humidity)
+          ResponseAppend_P( PSTR(",\"" D_JSON_TEMPERATURE "\":\"%d\""), ebcstatus.temperature);
+          ResponseAppend_P( PSTR(",\"" D_JSON_HUMIDITY "\":\"%d\""),  ebcstatus.humidity);
+          //ResponseAppend_P( PSTR(",\"" D_JSON_TEMPERATURE "\":\"%*_f\""), Settings->flag2.humidity_resolution, ConvertTemp(ebcstatus.temperature));
+          /*
+                    ResponseAppend_P(PSTR(",\"%s\":{\"" D_JSON_HUMIDITY "\":%*_f,\"Raw\":%d}"),
+              Dht[i].stype, Settings->flag2.humidity_resolution, &Dht[i].h, Dht[i].raw);
+              
+          ResponseAppend_P(PSTR(",\"EBC miniClima\":{"));
+          ResponseAppend_P(PSTR("\"Humidity\":%d,"), ebcstatus.humidity);
+          ResponseAppend_P(PSTR("\"Temperature\":%d,"), ebcstatus.temperature);
+          ResponseJsonEnd();*/
       } else {
         WSContentSend_PD("{s}Umidità rilevata{m}%d{e}{s}Temperatura{m}%d{e}{s}Setpoint{m}%d{e}{s}Correzione RH{m}%d{e}{s}Hysteresis{m}%d{e}{s}Serial number{m}%s{e}{s}FW version{m}%s{e}{s}Ore totali{m}%d{e}{s}Stato{m}%s{e}",
         ebcstatus.humidity, ebcstatus.temperature, ebcstatus.setpoint, ebcstatus.rhCorrection,
@@ -779,26 +796,24 @@ bool Xdrv100(uint32_t function) {
   else if (ebcstatus.inited == EBC_INITED ) {
       switch (function) {
         case FUNC_EVERY_SECOND:
-        /*
-        if(!ebcstatus.requestpending){
-          if(refresh_interval % 6 == 0) {
+//        if(!ebcstatus.requestpending){
+          if(refresh_interval % 10 == 0) {
             CmdVals();  
             //ebcSerial->write(cmd_vals,sizeof(cmd_vals));
             //ebcstatus.ebcstate = NEXT_VALS;
           }
-          if(refresh_interval % 8 == 0) {
+          if(refresh_interval % 14 == 0) {
             CmdSernum();
             //ebcSerial->write(cmd_sernum,sizeof(cmd_sernum));
             //ebcstatus.ebcstate = NEXT_SERNUM;
           }
-        }
-        else {
-          CmdVals();
-          ebcstatus.requestpending = false;
-        }
-        */
+          ebcstatus.requestpending = true;
+        //}
           refresh_interval++;
           
+          break;
+        case FUNC_JSON_APPEND:
+          EBCShow(1);
           break;
         case FUNC_WEB_SENSOR:
           EBCShow(0);
@@ -857,6 +872,7 @@ bool Xdrv100(uint32_t function) {
     }
   return result;
 }
+
 
 void MyProjectProcessing(void)
 {
