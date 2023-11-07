@@ -582,8 +582,8 @@ void EBCShow(bool json) {
           //ResponseAppend_P( PSTR(",\"" D_JSON_HUMIDITY "\":\"%*f\""), Settings->flag2.humidity_resolution, ebcstatus.humidity);
 
           //int ResponseAppendTHD(float f_temperature, float f_humidity)
-          ResponseAppend_P( PSTR(",\"" D_JSON_TEMPERATURE "\":\"%d\""), ebcstatus.temperature);
-          ResponseAppend_P( PSTR(",\"" D_JSON_HUMIDITY "\":\"%d\""),  ebcstatus.humidity);
+          ResponseAppend_P( PSTR(",\"EBC\":{\"" D_JSON_TEMPERATURE "\":\"%d\""), ebcstatus.temperature);
+          ResponseAppend_P( PSTR(",\"" D_JSON_HUMIDITY "\":\"%d\"}"),  ebcstatus.humidity);
           //ResponseAppend_P( PSTR(",\"" D_JSON_TEMPERATURE "\":\"%*_f\""), Settings->flag2.humidity_resolution, ConvertTemp(ebcstatus.temperature));
           /*
                     ResponseAppend_P(PSTR(",\"%s\":{\"" D_JSON_HUMIDITY "\":%*_f,\"Raw\":%d}"),
