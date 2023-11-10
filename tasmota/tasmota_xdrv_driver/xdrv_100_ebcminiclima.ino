@@ -15,7 +15,6 @@
 #define XDRV_100 100
 const char HTTP_BTN_MENU_MI32[] PROGMEM = "<p><form action='m32' method='get'><button>EBC Dashboard</button></form></p>";
 
-
 #ifndef nitems
 #define nitems(_a)		(sizeof((_a)) / sizeof((_a)[0]))
 #endif
@@ -24,8 +23,8 @@ const char HTTP_BTN_MENU_MI32[] PROGMEM = "<p><form action='m32' method='get'><b
 #define SERIAL_NUMBER_LEN   13
 #define FIRMWARE_VER_LEN    13
 // Serial buffer length for incoming data
-#define EBC_MAX_DATA_LEN 128
-
+#define EBC_MAX_DATA_LEN    128
+#define MAIL_MSG_MAX_SIZE   140
 /*M/S/E/e (M.. EBC10/11/12 master
 S.. EBC10/11/12 slave,
 E.. EBCeasy master
@@ -43,7 +42,7 @@ const char cmd_setpoint[] PROGMEM ="#setPoint\r";
 #define D_PRFX_EBCMINICLIMA "EBC"
 
 enum EBC_MODEL { EBC_10_11_12_MASTER, EBC_10_11_12_SLAVE, EBCEASY_MASTER, EBCEASY_SLAVE };
-enum EBC_STATE { NEXT_SERNUM, NEXT_VALS, NEXT_SETPOINT, NEXT_DATE, NEXT_TIME, NEXT_DUMP, NEXT_START, NEXT_STOP, NEXT_OPHOURS, NEXT_REFRESH, IDLE};
+enum EBC_STATE { NEXT_SERNUM, NEXT_VALS, NEXT_SETPOINT, NEXT_DATE, NEXT_TIME, NEXT_DUMP, NEXT_START, NEXT_STOP, NEXT_OPHOURS, NEXT_REFRESH, NEXT_ALARM, IDLE};
 
 struct EBC_MODEL_MAP {
 	enum EBC_MODEL	 linkMode;
@@ -84,6 +83,7 @@ TasmotaSerial *ebcSerial = nullptr;
 
 // This variable will be set to true after initialization
 bool initSuccess = false;
+static uint32_t lastMail;
 
 char * payload = nullptr;
 size_t payload_size = 100;
@@ -138,10 +138,12 @@ const char MyProjectCommands[] PROGMEM = D_PRFX_EBCMINICLIMA "|"
   "simulate|"
   "status|"
   "setpoint|"
+  "alarm|"
+  "mail|"
   "SendMQTT";
 
 void (* const MyProjectCommand[])(void) PROGMEM = {
-  &CmdVals, &CmdSernum, &CmdDate, &CmdStart, &CmdStop, &CmdSimulate, &CmdEbcStatus, &CmdSetPoint, &CmdSendMQTT};
+  &CmdVals, &CmdSernum, &CmdDate, &CmdStart, &CmdStop, &CmdSimulate, &CmdEbcStatus, &CmdSetPoint, &CmdAlarm, &CmdSetEmail, &CmdSendMQTT};
 
 void CmdVals(void) {
   ebcSerial->write(cmd_vals, strlen(cmd_vals));
@@ -154,6 +156,12 @@ void CmdOphours(void) {
   ebcSerial->write(cmd_ophours, strlen(cmd_ophours));
   ebcstatus.ebcstate = NEXT_OPHOURS;
   AddLog(LOG_LEVEL_DEBUG, "next state OPHOURS %d", ebcstatus.ebcstate);
+  //ResponseCmndDone();
+}
+
+void CmdAlarm(void) {
+  ebcstatus.ebcstate = NEXT_ALARM;
+  AddLog(LOG_LEVEL_DEBUG, "next state ALARM %d", ebcstatus.ebcstate);
   //ResponseCmndDone();
 }
 
@@ -202,6 +210,42 @@ void CmdSetPoint(void) {
   //ebcSerial->write(cmd_date, strlen(cmd_setpoint));
   ebcstatus.ebcstate = NEXT_SETPOINT;
   ResponseCmndDone();
+}
+
+void CmdSetEmail(void) {
+  char cmd[140]="[";
+   if (XdrvMailbox.data_len > 0) {
+    AddLog(LOG_LEVEL_DEBUG,"email data_len %d", XdrvMailbox.data_len);
+/*
+    char *p;
+    uint32_t i = 0;
+    char param[4][30];
+    //for (param[i] = strtok_r(XdrvMailbox.data, ", ", &p); param[i] && i < 4; param[i] = strtok_r(nullptr, ", ", &p)) {
+      for ( strcpy(param[i],strtok_r(XdrvMailbox.data, ",", &p)); param[i][0] ; strcpy( param[i], strtok_r(NULL, ",", &p))) {
+        AddLog(LOG_LEVEL_DEBUG,"%s", param[i]);
+      i++;
+    }
+    */
+    //strncpy(cmd, "[\0", 3);
+    strncat(cmd, XdrvMailbox.data, sizeof(cmd)-3);
+    strncat(cmd, ":", 1);
+    SettingsUpdateText(SET_EBC_SENDMAIL, cmd);
+    AddLog(LOG_LEVEL_DEBUG, "email new param %s", SettingsText(SET_EBC_SENDMAIL));
+      /*
+      param1 smtp.gmail.com:465
+      param2 marcorizza79
+      param3 zmutbaqpwmgdknbw
+      param4 marcorizza79@gmail.com
+      */
+      //[smtp.gmail.com:465:marcorizza79:zmutbaqpwmgdknbw:marcorizza79@gmail.com:
+         // smtp.gmail.com:465:marcorizza79:zmutbaqpwmgdknbw:marcorizza79@gmail.com:marco_jk@hotmail.com
+
+ 
+ // ResponseCmndDone();
+}
+else if(XdrvMailbox.data_len == 0) {
+  AddLog(LOG_LEVEL_INFO, "smtpserver:port:user:pwd:from:to:subject %s", SettingsText(SET_EBC_SENDMAIL));
+}
 }
 
 void CmdDate(void) {
@@ -274,8 +318,30 @@ void CmdSendMQTT(void) {
 \*********************************************************************************************/
 //  if (*mserv == '*') { mserv = xPSTR(EMAIL_SERVER); }
 void ebcSendEmail (char *buffer) {
-
-}
+  
+  if( millis() - lastMail < 500) {
+    AddLog(LOG_LEVEL_DEBUG,"antibouncing email");
+    return;
+  }
+  if (strlen(buffer) > 40) {
+    AddLog(LOG_LEVEL_DEBUG,"Allarme non valido");
+    return;
+  }
+    //"[smtp.gmail.com:465:marcorizza79:zmutbaqpwmgdknbw:marcorizza79@gmail.com:marco_jk@hotmail.com:test]"
+    char mailmsg[MAIL_MSG_MAX_SIZE];
+    char *pnt;
+    pnt = SettingsText(SET_EBC_SENDMAIL);
+    strcpy(mailmsg, pnt);
+    AddLog(LOG_LEVEL_DEBUG,"0 %s", pnt);
+    AddLog(LOG_LEVEL_DEBUG,"1 %s", mailmsg);
+    strcat(mailmsg,SettingsText(SET_DEVICENAME));
+    strncat(mailmsg,":",1);
+    strncat(mailmsg, buffer, 40);
+    AddLog(LOG_LEVEL_DEBUG,"2 %s", mailmsg);
+    strncat(mailmsg,"]",1);
+    AddLog(LOG_LEVEL_DEBUG,"sending mail %s, len %d", mailmsg, strlen(mailmsg));
+    SendMail(mailmsg);
+  }
 
 void ebcSendMailAlarms ()
 {
@@ -301,6 +367,7 @@ void ebcProcessSerialData (void)
     {
         while (ebcSerial->available() > 0)
         {
+          //AddLog(LOG_LEVEL_INFO,"Got serial data");
             data = ebcSerial->read();
             dataReady = ebcAddData((char)data);
             if (dataReady)
@@ -418,6 +485,7 @@ void ebcProcessData(void) {
             AddLog(LOG_LEVEL_DEBUG,"START %s", ebc_buffer);
           if(!strcmp(PSTR("start"), ebc_buffer)) { 
             AddLog(LOG_LEVEL_DEBUG,"calling start from ebcprocessdata");
+            ebc_buffer[0] = 0;
             ebcStartStop(true);
             return; //handle echo
           }
@@ -433,7 +501,7 @@ void ebcProcessData(void) {
               AddLog(LOG_LEVEL_DEBUG,"calling stop from ebcprocessdata");
               ebc_buffer[0] = 0;
               ebcStartStop(false);
-              //return; //handle echo
+              return; //handle echo
               }
             if(strstr(ebc_buffer, PSTR("Stop"))) {
               AddLog(LOG_LEVEL_DEBUG,"stop parse datetime");
@@ -441,20 +509,20 @@ void ebcProcessData(void) {
               ebcstatus.running = 0;
             }
             break;
-          case NEXT_OPHOURS:
-            AddLog(LOG_LEVEL_DEBUG,"OPHOURS %s", ebc_buffer);
-            if(!strcmp(PSTR("ophours"), ebc_buffer)) 
-              return;
-            if(strlen(ebc_buffer) == 6)
-              sscanf(ebc_buffer,"%d", &ebcstatus.ophours);
-            break;
+        case NEXT_OPHOURS:
+          AddLog(LOG_LEVEL_DEBUG,"OPHOURS %s", ebc_buffer);
+          if(!strcmp(PSTR("ophours"), ebc_buffer)) 
+            return;
+          if(strlen(ebc_buffer) == 6)
+            sscanf(ebc_buffer,"%d", &ebcstatus.ophours);
+          break;
         default:
           ebcParseDateTime(ebc_buffer);
           ebcParseAlarms(ebc_buffer);
           ebcParsePeriodicData(ebc_buffer);
           break;
+    }
         ebcstatus.ebcstate = IDLE;
-      }
     //ResponseCmndDone();
 }
 
@@ -480,6 +548,10 @@ void ebcInit(uint32_t func)
     else AddLog(LOG_LEVEL_DEBUG, PSTR("EBC ser NOT started"));
     }
     if (FUNC_INIT == func) {
+      if( 0 == strlen(SettingsText(SET_EBC_SENDMAIL)) ) {
+        SettingsUpdateText(SET_EBC_SENDMAIL, "[smtp.gmail.com:465:marcorizza79:zmutbaqpwmgdknbw:marcorizza79@gmail.com:");
+      }
+      lastMail = millis();
       //ExecuteWebCommand(PSTR("ebcvals"));
       //ExecuteWebCommand(PSTR("ebcsernum"));
     }
@@ -496,28 +568,42 @@ void ebcParseDateTime(char * buffer) {
     }
 }
 void ebcParseAlarms(char * buffer) {
+  //TODO eliminare strstr e puntare alla posizione fissa
+  //23.10.14 19:15 A
+  //23.10.15 10:28 Alarm Bottle Full gone
+
   AddLog(LOG_LEVEL_DEBUG,"parse alarms");
   if(buffer) {
+    if(buffer[15] != 'A')// || buffer[15] != 'S')
+    //if(!strstr(buffer, "Alarm"));
+    {
+      AddLog(LOG_LEVEL_DEBUG,"alarm not found");
+      return;
+    }
     char *p;   
-    char *str = strtok_r(buffer, ", ", &p); 
+    char *str = strtok_r(buffer, " ", &p); 
+     AddLog(LOG_LEVEL_DEBUG, "%s", str);
     if(!str)
       return;
-    str = strtok_r(buffer, ", ", &p); 
+    str = strtok_r(NULL, " ", &p);
+     AddLog(LOG_LEVEL_DEBUG, "%s", str); 
     if(!str)
       return;
-    str = strtok_r(buffer, ", ", &p);  
-    if(strcmp(str,PSTR("Alarm"))) {
-      char *pnt = strstr(buffer, "Alarm");
-      AddLog(LOG_LEVEL_DEBUG,"Parsed alarm: %d", pnt);
-      ebcSendEmail(pnt);
+    //str = strtok_r(p, " ", &p);
+    AddLog(LOG_LEVEL_DEBUG, "ultimo %s", p);  
+    if(strstr(p,PSTR("Alarm"))) {
+      //char *pnt = strstr(buffer, "Alarm");
+      AddLog(LOG_LEVEL_DEBUG,"Parsed alarm: %s", p);
+      ebcSendEmail(p);
     } 
-    else if (strcmp(str,PSTR("Signal"))) {      
-      char *pnt = strstr(buffer, "Signal");
+    else if (strstr(p,PSTR("Signal"))) {      
+      char *pnt = strstr(p, "Signal");
       AddLog(LOG_LEVEL_DEBUG,"Parsed signal: %d", pnt);
       ebcSendEmail(pnt);
     }
 
   }
+  
 }
 void ebcParsePeriodicData(char * buffer) {
   AddLog(LOG_LEVEL_DEBUG,"parsing periodic %s", buffer);
@@ -533,7 +619,7 @@ void ebcParsePeriodicData(char * buffer) {
       ebcstatus.alarmdelay, ebcstatus.interval, ebcstatus.rhCorrection);
       return;
     }
-else{ 
+else if (buffer[2] != '.') { 
         //54 28 +28 +29 00
       sscanf( buffer, "%d %d %d %d %d", 
       &ebcstatus.humidity, &ebcstatus.temperature, &ebcstatus.t_cond, &ebcstatus.t_cool, &ebcstatus.alarms);
@@ -684,7 +770,7 @@ void LscMcWebGetArg(void) {
     ebcstatus.targetsetpoint = function;
     ExecuteWebCommand(cmd);
   }
-  WebGetArg(PSTR("ebcrfsh"), tmp, sizeof(tmp));  // 0 - 7 functions
+  WebGetArg(PSTR("ebcrfsh_"), tmp, sizeof(tmp));  // 0 - 7 functions
   if(strlen(tmp)) {
     ebcstatus.requestpending = true;
     /*  AddLog(LOG_LEVEL_DEBUG,"refresh");
@@ -758,6 +844,9 @@ bool Xdrv100(uint32_t function) {
               case NEXT_SETPOINT:
                 ebcSerial->write("11.06.08 13:12\r");
                 ebcSerial->write("Set:50 40 60 01 01 +00\r");
+              break;
+              case NEXT_ALARM:
+                ebcSerial->write("23.10.15 10:28 Alarm Bottle Full gone\r");
               break;
               default:
               break;
