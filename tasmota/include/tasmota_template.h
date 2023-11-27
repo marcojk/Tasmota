@@ -211,6 +211,9 @@ enum UserSelectablePins {
   GPIO_LOX_O2_RX,                       // LOX-O2 RX
   GPIO_GM861_TX, GPIO_GM861_RX,         // GM861 Serial interface
   GPIO_DINGTIAN_OE,                     // New version of Dingtian relay board where PL is not shared with OE
+  GPIO_HDMI_CEC,                        // Support for HDMI CEC
+  GPIO_HC8_RXD,                         // HC8 Serial interface
+  GPIO_I2S_DAC, 
   GPIO_EBC_TX,                          // MiniclimaEBC TX
   GPIO_EBC_RX,                          // MiniclimaEBC RX
   GPIO_SENSOR_END };
@@ -470,7 +473,11 @@ const char kSensorNames[] PROGMEM =
   D_SENSOR_PCF8574_INT "|"
   D_SENSOR_LOX_O2_RX "|"
   D_SENSOR_GM861_TX "|" D_SENSOR_GM861_RX "|"
-  D_GPIO_DINGTIAN_OE "|" D_GPIO_EBC_TX "|" D_GPIO_EBC_RX
+  D_GPIO_DINGTIAN_OE "|"
+  D_SENSOR_HDMI_CEC "|"
+  D_SENSOR_HC8_RX "|"
+  D_SENSOR_I2S_DAC "|"
+  D_GPIO_EBC_TX "|" D_GPIO_EBC_RX
   ;
 
 const char kSensorNamesFixed[] PROGMEM =

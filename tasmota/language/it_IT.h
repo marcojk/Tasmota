@@ -411,9 +411,13 @@
 #define D_UPLOAD_ERR_14           "Non compatibile"
 #define D_UPLOAD_ERROR_CODE       "Codice errore upload"
 
+
 #define D_ENTER_COMMAND               "Inserisci comando"
 #define D_ENABLE_WEBLOG_FOR_RESPONSE  "Abilita weblog 2 se è attesa una risposta"
 #define D_NEED_USER_AND_PASSWORD      "Richiesto utente=<username>&password=<password>"
+
+#define D_GPIO_EBC_TX          "EBC TX"
+#define D_GPIO_EBC_RX          "EBC RX"
 
 // xdrv_01_mqtt.ino
 #define D_FINGERPRINT            "Verifica chiave TLS..."

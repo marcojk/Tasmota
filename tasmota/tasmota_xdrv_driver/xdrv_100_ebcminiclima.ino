@@ -41,7 +41,7 @@ const char cmd_setpoint[] PROGMEM ="#setPoint\r";
 
 #define D_PRFX_EBCMINICLIMA "EBC"
 
-enum EBC_MODEL { EBC_10_11_12_MASTER, EBC_10_11_12_SLAVE, EBCEASY_MASTER, EBCEASY_SLAVE };
+enum EBC_MODEL { EBC_10_11_12_MASTER = 'M', EBC_10_11_12_SLAVE = 'S', EBCEASY_MASTER = 'E', EBCEASY_SLAVE = 'e', NO_MODEL = 'n', UNSET = '0'};
 enum EBC_STATE { NEXT_SERNUM, NEXT_VALS, NEXT_SETPOINT, NEXT_DATE, NEXT_TIME, NEXT_DUMP, NEXT_START, NEXT_STOP, NEXT_OPHOURS, NEXT_REFRESH, NEXT_ALARM, IDLE};
 
 struct EBC_MODEL_MAP {
@@ -49,10 +49,11 @@ struct EBC_MODEL_MAP {
 	const char		*name;
 };
 static const struct EBC_MODEL_MAP ebcLinkMode[] = {
-	{ EBC_10_11_12_MASTER,		        "EBC10/11/12 master"},
-	{ EBC_10_11_12_SLAVE,		        "EBC10/11/12 slave" },
-	{ EBCEASY_MASTER,		            "EBCeasy master"	},
-	{ EBCEASY_SLAVE,		            "EBCeasy slave"	},
+  { NO_MODEL,                     "Sconosciuto"},//this element is always present
+	{ EBC_10_11_12_MASTER,		      "EBC1X mas"},
+	{ EBC_10_11_12_SLAVE,		        "EBC1X slv" },
+	{ EBCEASY_MASTER,		            "EBCeasy mas"	},
+	{ EBCEASY_SLAVE,		            "EBCeasy slv"	},
 };
 #define EBC1X_SENSOR_ALARM      0x40
 #define EBC1X_PUMP              0x20
@@ -115,7 +116,7 @@ struct ebcStatus {
     char serialNumber[SERIAL_NUMBER_LEN];
     char firmwareVer[FIRMWARE_VER_LEN];
     enum EBC_STATE ebcstate;
-    enum EBC_MODEL model;
+    const char *model;
     uint32_t alarms;
 } ebcstatus;
 
@@ -345,11 +346,12 @@ void ebcSendEmail (char *buffer) {
 
 void ebcSendMailAlarms ()
 {
-  uint8_t alarms;
+  /*uint8_t alarms;
   if(ebcstatus.model == EBC_10_11_12_MASTER || ebcstatus.model == EBC_10_11_12_SLAVE) {
         if( (alarms & EBC1X_SENSOR_ALARM) != (ebcstatus.alarms & EBC1X_SENSOR_ALARM));
 
       }
+      */
 }
 
 void ebcCheckAlarms(uint8_t alarms) {
@@ -469,6 +471,15 @@ void ebcProcessData(void) {
           AddLog(LOG_LEVEL_DEBUG_MORE,"%s %s %s %d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, ebcstatus.setpoint);
           sscanf( ebc_buffer, "%s %s %s %[^:]:%d %d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, &ebcstatus.setpoint, &ebcstatus.setpointHumidityL);
           AddLog(LOG_LEVEL_DEBUG_MORE,"%s %s %s %d %d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, ebcstatus.setpoint, ebcstatus.setpointHumidityL);*/
+
+          if(ebcstatus.model == NULL) {
+            for (int i=0; i<sizeof(ebcLinkMode); i++) {
+              if (ebcLinkMode[i].linkMode == model[0]) {
+                ebcstatus.model = ebcLinkMode[i].name;
+                break;
+              }
+            }
+          }
           if(refresh_pending) {
             CmdVals();
             ebcstatus.ebcstate = NEXT_VALS;
@@ -544,6 +555,7 @@ void ebcInit(uint32_t func)
         }*/
         ebcstatus.inited = EBC_INITED;
         ebcstatus.simulator = false;
+        ebcstatus.model = NULL;
     }
     else AddLog(LOG_LEVEL_DEBUG, PSTR("EBC ser NOT started"));
     }
@@ -668,6 +680,7 @@ void EBCShow(bool json) {
           //ResponseAppend_P( PSTR(",\"" D_JSON_HUMIDITY "\":\"%*f\""), Settings->flag2.humidity_resolution, ebcstatus.humidity);
 
           //int ResponseAppendTHD(float f_temperature, float f_humidity)
+          ResponseAppend_P( PSTR(",\"devType\":{\"%s\"}"), ebcstatus.model);
           ResponseAppend_P( PSTR(",\"EBC\":{\"" D_JSON_TEMPERATURE "\":%d"), ebcstatus.temperature);
           ResponseAppend_P( PSTR(",\"" D_JSON_HUMIDITY "\":%d}"),  ebcstatus.humidity);
           //ResponseAppend_P( PSTR(",\"" D_JSON_TEMPERATURE "\":\"%*_f\""), Settings->flag2.humidity_resolution, ConvertTemp(ebcstatus.temperature));
