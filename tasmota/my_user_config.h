@@ -1177,32 +1177,32 @@
   #define USE_LVGL_BG_DEFAULT 0x000000           // Default color for the uninitialized background screen (black)
   // Disabling select widgets that will be rarely used in Tasmota (-13KB)
   // Main widgets as defined in LVGL8
-    #define BE_LV_WIDGET_ARC
-    #define BE_LV_WIDGET_BAR
-    #define BE_LV_WIDGET_BTN
-    #define BE_LV_WIDGET_BTNMATRIX
-    #define BE_LV_WIDGET_CANVAS
-    #define BE_LV_WIDGET_CHECKBOX
-    #define BE_LV_WIDGET_DROPDOWN
-    #define BE_LV_WIDGET_IMG
-    #define BE_LV_WIDGET_LABEL
-    #define BE_LV_WIDGET_LINE
-    #define BE_LV_WIDGET_ROLLER
-    #define BE_LV_WIDGET_SLIDER
-    #define BE_LV_WIDGET_SWITCH
-    #define BE_LV_WIDGET_TABLE
-    #define BE_LV_WIDGET_TEXTAREA
+//    #define BE_LV_WIDGET_ARC
+//    #define BE_LV_WIDGET_BAR
+//    #define BE_LV_WIDGET_BTN
+//    #define BE_LV_WIDGET_BTNMATRIX
+//    #define BE_LV_WIDGET_CANVAS
+//    #define BE_LV_WIDGET_CHECKBOX
+//    #define BE_LV_WIDGET_DROPDOWN
+//    #define BE_LV_WIDGET_IMG
+//    #define BE_LV_WIDGET_LABEL
+//    #define BE_LV_WIDGET_LINE
+//    #define BE_LV_WIDGET_ROLLER
+//    #define BE_LV_WIDGET_SLIDER
+//    #define BE_LV_WIDGET_SWITCH
+//    #define BE_LV_WIDGET_TABLE
+//    #define BE_LV_WIDGET_TEXTAREA
 
-    #define BE_LV_WIDGET_CHART
-    #define BE_LV_WIDGET_COLORWHEEL
-    #define BE_LV_WIDGET_IMGBTN
-    #define BE_LV_WIDGET_LED
-    #define BE_LV_WIDGET_METER
-    #define BE_LV_WIDGET_MSGBOX
-    #define BE_LV_WIDGET_SPINBOX
-    #define BE_LV_WIDGET_SPINNER
+//    #define BE_LV_WIDGET_CHART
+//    #define BE_LV_WIDGET_COLORWHEEL
+//    #define BE_LV_WIDGET_IMGBTN
+//    #define BE_LV_WIDGET_LED
+//    #define BE_LV_WIDGET_METER
+//    #define BE_LV_WIDGET_MSGBOX
+//    #define BE_LV_WIDGET_SPINBOX
+//    #define BE_LV_WIDGET_SPINNER
 
-    #define BE_LV_WIDGET_QRCODE
+//    #define BE_LV_WIDGET_QRCODE
 
 #endif  // ESP32
 
