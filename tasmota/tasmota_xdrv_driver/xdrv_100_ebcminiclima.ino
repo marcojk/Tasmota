@@ -10,14 +10,10 @@
  *
  *
 \*********************************************************************************************/
-
+#include <ctype.h>
 
 #define XDRV_100 100
-const char HTTP_BTN_MENU_MI32[] PROGMEM = "<p><form action='m32' method='get'><button>EBC Dashboard</button></form></p>";
-
-#ifndef nitems
-#define nitems(_a)		(sizeof((_a)) / sizeof((_a)[0]))
-#endif
+const char HTTP_BTN_MENU_TEST[] PROGMEM = "<p><form action='m32' method='get'><button>EBC Dashboard</button></form></p>";
 
 #define EBC_SPEED           9600
 #define SERIAL_NUMBER_LEN   13
@@ -66,7 +62,7 @@ static const struct EBC_MODEL_MAP ebcLinkMode[] = {
 #define EBCEASY_INTERNAL_TEM    0x04
 #define EBCEASY_HUMIDITY_HIGH   0x02
 #define EBCEASY_HUMIDITY_LOW    0x01
-
+#define EBCEASY_OK              0x80
 #define EBC_INIT                0
 #define EBC_PREINIT             1
 #define EBC_INITED              2
@@ -78,22 +74,11 @@ char ebc_buffer[EBC_MAX_DATA_LEN + 1];
 // Software and hardware serial pointers
 TasmotaSerial *ebcSerial = nullptr;
 
-/*********************************************************************************************\
- * My IoT Device Functions
-\*********************************************************************************************/
-
 // This variable will be set to true after initialization
 bool initSuccess = false;
 static uint32_t lastMail;
 
-char * payload = nullptr;
-size_t payload_size = 100;
-char * topic = nullptr;
-size_t topic_size = 30;
-
 struct ebcStatus {
-    //uint32_t lastDate;
-    //uint32_t lastTime;
     char lastDate[9]; //00.00.00
     char lastTime[6]; //11:59
     bool running;
@@ -136,6 +121,7 @@ const char MyProjectCommands[] PROGMEM = D_PRFX_EBCMINICLIMA "|"
   "date|"
   "start|"
   "stop|"
+  "ophours|"
   "simulate|"
   "status|"
   "setpoint|"
@@ -143,21 +129,71 @@ const char MyProjectCommands[] PROGMEM = D_PRFX_EBCMINICLIMA "|"
   "mail|"
   "SendMQTT";
 
-void (* const MyProjectCommand[])(void) PROGMEM = {
-  &CmdVals, &CmdSernum, &CmdDate, &CmdStart, &CmdStop, &CmdSimulate, &CmdEbcStatus, &CmdSetPoint, &CmdAlarm, &CmdSetEmail, &CmdSendMQTT};
+enum {
+    DUMP_BYTES_PER_LINE = 16,
+    DUMP_BYTES_GROUP = 8,
+    DUMP_CHARS_PER_LINE = DUMP_BYTES_PER_LINE * 4 + DUMP_BYTES_PER_LINE / DUMP_BYTES_GROUP + 4
+};
 
-void CmdVals(void) {
-  ebcSerial->write(cmd_vals, strlen(cmd_vals));
-  ebcstatus.ebcstate = NEXT_VALS;
-  AddLog(LOG_LEVEL_DEBUG, "next state VALS %d", ebcstatus.ebcstate);
-  //ResponseCmndDone();
+char* DumpHex(const unsigned char* data, size_t size)
+{
+    size_t const num_lines = size / DUMP_BYTES_PER_LINE + ((size % DUMP_BYTES_PER_LINE) > 0);
+    size_t const result_length = num_lines * DUMP_CHARS_PER_LINE;
+
+    char *result = (char*) malloc((result_length + 1) * sizeof(*result));
+    if (!result)
+        return NULL;
+
+    memset(result, ' ', result_length);
+    result[result_length] = '\0';
+
+    char *dump_pos = result;
+    char *plain_pos = result + DUMP_BYTES_PER_LINE * 3 + DUMP_BYTES_PER_LINE / DUMP_BYTES_GROUP + 3;
+    char unsigned const *src = data;
+
+    for (size_t i = 0; i < size; ++i, dump_pos += 3, ++plain_pos) {
+
+        sprintf(dump_pos, "%02x ", (int)src[i]);
+        dump_pos[3] = ' ';
+        *plain_pos = isprint(src[i]) ? src[i] : '.';
+
+        if ((i + 1) % DUMP_BYTES_PER_LINE == 0 || i + 1 == size) {
+            *++plain_pos = '\n';
+
+            size_t const bytes_per_line_left = (i + 1) % DUMP_BYTES_PER_LINE;
+            plain_pos[bytes_per_line_left ? -(long long)bytes_per_line_left - 3 : -DUMP_BYTES_PER_LINE - 3] = '|';
+
+            dump_pos = plain_pos + 1 - 3;
+            plain_pos = dump_pos + DUMP_BYTES_PER_LINE * 3 + DUMP_BYTES_PER_LINE / DUMP_BYTES_GROUP + 5;
+        }
+        else if ((i + 1) % DUMP_BYTES_GROUP == 0) {
+            ++dump_pos;
+        }
+    }
+
+    return result;
 }
 
-void CmdOphours(void) {
-  ebcSerial->write(cmd_ophours, strlen(cmd_ophours));
+void (* const MyProjectCommand[])(void) PROGMEM = {
+  &CmdVals, &CmdSernum, &CmdDate, &CmdStart, &CmdStop, &CmdOphours, &CmdSimulate, &CmdEbcStatus, &CmdSetPoint, &CmdAlarm, &CmdSetEmail};
+
+void SerialVals() {
+    ebcstatus.ebcstate = NEXT_VALS;
+    ebcSerial->write(cmd_vals, strlen(cmd_vals));
+}
+void CmdVals(void) {
+  SerialVals();
+  AddLog(LOG_LEVEL_DEBUG, "next state VALS %d", ebcstatus.ebcstate);
+  ResponseCmndDone();
+}
+void SerialOphours() {
   ebcstatus.ebcstate = NEXT_OPHOURS;
+  ebcSerial->write(cmd_ophours, strlen(cmd_ophours));
+}
+void CmdOphours(void) {
+  SerialOphours();
   AddLog(LOG_LEVEL_DEBUG, "next state OPHOURS %d", ebcstatus.ebcstate);
-  //ResponseCmndDone();
+  ResponseCmndDone();
 }
 
 void CmdAlarm(void) {
@@ -217,17 +253,6 @@ void CmdSetEmail(void) {
   char cmd[140]="[";
    if (XdrvMailbox.data_len > 0) {
     AddLog(LOG_LEVEL_DEBUG,"email data_len %d", XdrvMailbox.data_len);
-/*
-    char *p;
-    uint32_t i = 0;
-    char param[4][30];
-    //for (param[i] = strtok_r(XdrvMailbox.data, ", ", &p); param[i] && i < 4; param[i] = strtok_r(nullptr, ", ", &p)) {
-      for ( strcpy(param[i],strtok_r(XdrvMailbox.data, ",", &p)); param[i][0] ; strcpy( param[i], strtok_r(NULL, ",", &p))) {
-        AddLog(LOG_LEVEL_DEBUG,"%s", param[i]);
-      i++;
-    }
-    */
-    //strncpy(cmd, "[\0", 3);
     strncat(cmd, XdrvMailbox.data, sizeof(cmd)-3);
     strncat(cmd, ":", 1);
     SettingsUpdateText(SET_EBC_SENDMAIL, cmd);
@@ -248,32 +273,43 @@ else if(XdrvMailbox.data_len == 0) {
   AddLog(LOG_LEVEL_INFO, "smtpserver:port:user:pwd:from:to:subject %s", SettingsText(SET_EBC_SENDMAIL));
 }
 }
-
+  
+void SerialDate() {
+  ebcstatus.ebcstate = NEXT_DATE;
+  ebcSerial->write(cmd_start, strlen(cmd_date));
+}
 void CmdDate(void) {
   AddLog(LOG_LEVEL_INFO, cmd_date);
-  ebcSerial->write(cmd_start, strlen(cmd_date));
-  ebcstatus.ebcstate = NEXT_DATE;
+  SerialDate();
   ResponseCmndDone();
 }
-
+void SerialStart() {
+  ebcstatus.ebcstate = NEXT_START;
+  ebcSerial->write(cmd_start, strlen(cmd_start));
+}
 void CmdStart(void) {
   AddLog(LOG_LEVEL_INFO, cmd_start);
-  ebcSerial->write(cmd_start, strlen(cmd_start));
-  ebcstatus.ebcstate = NEXT_START;
+  SerialStart();
+  ResponseCmndDone();
+}
+void SerialStop() {
+  ebcstatus.ebcstate = NEXT_STOP;
+  ebcSerial->write(cmd_stop, strlen(cmd_stop));
+}
+void CmdStop(void) {
+  AddLog(LOG_LEVEL_INFO, cmd_stop);
+  SerialStop();
   ResponseCmndDone();
 }
 
-void CmdStop(void) {
-  AddLog(LOG_LEVEL_INFO, cmd_stop);
-  ebcSerial->write(cmd_stop, strlen(cmd_stop));
-  ebcstatus.ebcstate = NEXT_STOP;
-  ResponseCmndDone();
+void SerialSernum(){
+  ebcstatus.ebcstate = NEXT_SERNUM;
+  ebcSerial->write(cmd_sernum, strlen(cmd_sernum));
 }
 void CmdSernum(void) {
   AddLog(LOG_LEVEL_INFO, cmd_sernum);
-  ebcSerial->write(cmd_sernum, strlen(cmd_sernum));
-  ebcstatus.ebcstate = NEXT_SERNUM;
-  //ResponseCmndDone();
+  SerialSernum();
+  ResponseCmndDone();
 }
 
 void CmdSimulate(void) {
@@ -281,7 +317,6 @@ void CmdSimulate(void) {
   AddLog(LOG_LEVEL_INFO, "Toggle EBC internal simulator: %d", ebcstatus.simulator);
   ResponseCmndDone();
 }
-
 
 void CmdEbcStatus(void) {
 AddLog(LOG_LEVEL_INFO,
@@ -293,31 +328,6 @@ ebcstatus.hysteresis, ebcstatus.humidity, ebcstatus.temperature, ebcstatus.seria
   ResponseCmndDone();
 }
 
-void CmdSendMQTT(void) {
-  AddLog(LOG_LEVEL_INFO, PSTR("Sending MQTT message."));
-
-  snprintf_P(topic, topic_size, PSTR("tasmota/embcminiclima"));
-
-  snprintf_P(payload, payload_size,
-            PSTR("{\"" D_JSON_TIME "\":\"%s\",\"name\":\"My Project\"}"),
-            GetDateAndTime(DT_LOCAL).c_str()
-  );
-
-  // retain = true
-  MqttPublishPayload(topic, payload, strlen(payload), false);
-
-  ResponseCmndDone();
-}
-
-/*
-  AddLog(LOG_LEVEL_INFO, PSTR("Help: Accepted commands - Say_Hello, SendMQTT, Help"));
-  ResponseCmndDone();
-}
-*/
-/*********************************************************************************************\
- * Tasmota Functions
-\*********************************************************************************************/
-//  if (*mserv == '*') { mserv = xPSTR(EMAIL_SERVER); }
 void ebcSendEmail (char *buffer) {
   
   if( millis() - lastMail < 500) {
@@ -369,12 +379,10 @@ void ebcProcessSerialData (void)
     {
         while (ebcSerial->available() > 0)
         {
-          //AddLog(LOG_LEVEL_INFO,"Got serial data");
             data = ebcSerial->read();
             dataReady = ebcAddData((char)data);
             if (dataReady)
             {
-                //AddLog(LOG_LEVEL_DEBUG,PSTR("DATA READY"));
                 ebcProcessData();
             }
         }
@@ -385,15 +393,16 @@ bool ebcAddData(char nextChar)
 {
     // Buffer position
     static uint8_t currentIndex = 0;
-    if (0x0D == nextChar) 
+    if ('\r' == nextChar) 
       if( 0 != currentIndex)
       {
-        ebc_buffer[currentIndex] = '\0';
+        ebc_buffer[currentIndex] = '\r';
+        ebc_buffer[currentIndex+1] = '\0';
         currentIndex = 0;
         return true;
       }
       else return false;
-    if (0x0A == nextChar)
+    if ('\n' == nextChar)
         return false;
 
     ebc_buffer[currentIndex] = nextChar;
@@ -426,6 +435,7 @@ void ebcProcessData(void) {
     switch (ebcstatus.ebcstate) {
         case NEXT_VALS:
           AddLog(LOG_LEVEL_DEBUG_MORE,"VALS %s", ebc_buffer);
+          AddLog(LOG_LEVEL_DEBUG, DumpHex((const unsigned char*) ebc_buffer,strlen(ebc_buffer)));
           uint8_t alarms;
           if(!strcmp(cmd_vals, ebc_buffer))
             return; //handle echo
@@ -446,11 +456,11 @@ void ebcProcessData(void) {
           if(!strcmp(PSTR("#*************"), ebc_buffer))
             return; //handle echo
           if(ebc_buffer[0] == '?') {
-            ResponseCmndError();
+            AddLog(LOG_LEVEL_DEBUG, "ERROR");
             break;
           }
           else if(ebc_buffer[0] == '!') {
-            ResponseCmndDone();
+            AddLog(LOG_LEVEL_DEBUG, "OK");
             break;
           }
           ebcParseDateTime(ebc_buffer);
@@ -458,6 +468,7 @@ void ebcProcessData(void) {
         break;
         case NEXT_SERNUM:
           AddLog(LOG_LEVEL_DEBUG_MORE,"SERNUM %s", ebc_buffer);
+          AddLog(LOG_LEVEL_DEBUG, DumpHex((const unsigned char*)ebc_buffer,strlen(ebc_buffer)));
           if(!strcmp(cmd_sernum, ebc_buffer))
             return; //handle echo
           char model[5];
@@ -465,13 +476,7 @@ void ebcProcessData(void) {
                       //#003628 M 170908.04 Set:76 51 71 01 11 +00 03
                       
           sscanf( ebc_buffer, "%s %s %s %[^:]:%d %d %d %d %d %d %d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, fill, &ebcstatus.setpoint, &ebcstatus.setpointHumidityL, &ebcstatus.setpointHumidityH, &ebcstatus.alarmdelay, &ebcstatus.interval, &ebcstatus.rhCorrection, &ebcstatus.hysteresis);
-          /*sscanf( ebc_buffer, "%s %s %s", ebcstatus.serialNumber, model, ebcstatus.firmwareVer);
-          AddLog(LOG_LEVEL_DEBUG_MORE,"%s %s %s", ebcstatus.serialNumber, model, ebcstatus.firmwareVer);
-          sscanf( ebc_buffer, "%s %s %s %[^:]:%d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, &ebcstatus.setpoint);
-          AddLog(LOG_LEVEL_DEBUG_MORE,"%s %s %s %d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, ebcstatus.setpoint);
-          sscanf( ebc_buffer, "%s %s %s %[^:]:%d %d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, &ebcstatus.setpoint, &ebcstatus.setpointHumidityL);
-          AddLog(LOG_LEVEL_DEBUG_MORE,"%s %s %s %d %d", ebcstatus.serialNumber, model, ebcstatus.firmwareVer, ebcstatus.setpoint, ebcstatus.setpointHumidityL);*/
-
+          
           if(ebcstatus.model == NULL) {
             for (int i=0; i<sizeof(ebcLinkMode); i++) {
               if (ebcLinkMode[i].linkMode == model[0]) {
@@ -481,8 +486,7 @@ void ebcProcessData(void) {
             }
           }
           if(refresh_pending) {
-            CmdVals();
-            ebcstatus.ebcstate = NEXT_VALS;
+            SerialVals();            
             return;
           }
           ebcstatus.requestpending = false;
@@ -534,7 +538,6 @@ void ebcProcessData(void) {
           break;
     }
         ebcstatus.ebcstate = IDLE;
-    //ResponseCmndDone();
 }
 
 void ebcInit(uint32_t func)
@@ -555,7 +558,9 @@ void ebcInit(uint32_t func)
         }*/
         ebcstatus.inited = EBC_INITED;
         ebcstatus.simulator = false;
-        ebcstatus.model = NULL;
+        ebcstatus.model = ebcLinkMode[0].name;
+        ebcstatus.ebcstate = IDLE;
+        AddLog(LOG_LEVEL_DEBUG, PSTR("preinit done"));
     }
     else AddLog(LOG_LEVEL_DEBUG, PSTR("EBC ser NOT started"));
     }
@@ -563,6 +568,7 @@ void ebcInit(uint32_t func)
       if( 0 == strlen(SettingsText(SET_EBC_SENDMAIL)) ) {
         SettingsUpdateText(SET_EBC_SENDMAIL, "[smtp.gmail.com:465:marcorizza79:zmutbaqpwmgdknbw:marcorizza79@gmail.com:");
       }
+      AddLog(LOG_LEVEL_DEBUG, PSTR("Init done"));
       lastMail = millis();
       //ExecuteWebCommand(PSTR("ebcvals"));
       //ExecuteWebCommand(PSTR("ebcsernum"));
@@ -642,31 +648,6 @@ else if (buffer[2] != '.') {
 }
 
 }
-void MyProjectInit()
-{
-
-
-  /*
-    Here goes My Project setting.
-    Usually this part is included into setup() function
-  */
-
-
-
-  payload = (char*)calloc(payload_size, sizeof(char));
-  topic = (char*)calloc(topic_size, sizeof(char));
-
-
-  if (!payload || !topic) {
-    AddLog(LOG_LEVEL_DEBUG, PSTR("My Project: out of memory"));
-    return;
-  }
-
-  initSuccess = true;
-
-  AddLog(LOG_LEVEL_DEBUG, PSTR("My Project init is successful..."));
-
-}
 
 void EBCShow(bool json) {
   if (ebcstatus.inited == EBC_INITED) {
@@ -680,9 +661,13 @@ void EBCShow(bool json) {
           //ResponseAppend_P( PSTR(",\"" D_JSON_HUMIDITY "\":\"%*f\""), Settings->flag2.humidity_resolution, ebcstatus.humidity);
 
           //int ResponseAppendTHD(float f_temperature, float f_humidity)
+          AddLog(LOG_LEVEL_DEBUG, "1");
           ResponseAppend_P( PSTR(",\"devType\":\"%s\""), ebcstatus.model);
+          AddLog(LOG_LEVEL_DEBUG, "2");
           ResponseAppend_P( PSTR(",\"EBC\":{\"" D_JSON_TEMPERATURE "\":%d"), ebcstatus.temperature);
+          AddLog(LOG_LEVEL_DEBUG, "3");
           ResponseAppend_P( PSTR(",\"" D_JSON_HUMIDITY "\":%d}"),  ebcstatus.humidity);
+          AddLog(LOG_LEVEL_DEBUG, "4");
           //ResponseAppend_P( PSTR(",\"" D_JSON_TEMPERATURE "\":\"%*_f\""), Settings->flag2.humidity_resolution, ConvertTemp(ebcstatus.temperature));
           /*
                     ResponseAppend_P(PSTR(",\"%s\":{\"" D_JSON_HUMIDITY "\":%*_f,\"Raw\":%d}"),
@@ -714,8 +699,6 @@ void EBCShow(bool json) {
 
 //#ifdef USE_WEBSERVER
 
-
-
 void LscMcAddFuctionButtons(void) {
       WSContentSend_P(HTTP_TABLE100);      
       WSContentSend_P("<tr>");
@@ -726,40 +709,7 @@ void LscMcAddFuctionButtons(void) {
       WSContentSend_P("</tr><tr>");
       WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&ebcrfsh=1\");'>%s</button></td>"), 50,   // &ebc is related to WebGetArg("ebc", tmp, sizeof(tmp));
       PSTR("Aggiorna"));
-      
       WSContentSend_P(PSTR("</tr></table>"));
-  
-  /*WSContentSend_P(HTTP_TABLE100);
-  WSContentSend_P(PSTR("<tr>"));
-  WSContentSend_P("<td style='width:32%;text-align:center;font-weight:normal;font-size:28px'>test</td>");
-  WSContentSend_P(PSTR("</tr></table>"));
-  */
-  /*
-  uint32_t rows = 1;
-  uint32_t cols = 8;
-  for (uint32_t i = 0; i < 8; i++) {
-    if (strlen(SettingsText(SET_BUTTON1 + i +1))) {
-      rows <<= 1;
-      cols >>= 1;
-      break;
-    }
-  }
-  WSContentSend_P(HTTP_TABLE100);
-  WSContentSend_P(PSTR("<tr>"));
-  char number[4];
-  uint32_t idx = 0;
-  for (uint32_t i = 0; i < rows; i++) {
-    if (idx > 0) { WSContentSend_P(PSTR("</tr><tr>")); }
-    for (uint32_t j = 0; j < cols; j++) {
-      idx++;
-      WSContentSend_P(PSTR("<td style='width:%d%%'><button onclick='la(\"&lsc=%d\");'>%s</button></td>"),  // &lsc is related to WebGetArg("lsc", tmp, sizeof(tmp));
-        100 / cols,
-        idx -1,
-        (strlen(SettingsText(SET_BUTTON1 + idx))) ? SettingsText(SET_BUTTON1 + idx) : itoa(idx, number, 10));
-    }
-  }
-  WSContentSend_P(PSTR("</tr></table>"));
-  */
 }
 
 void LscMcWebGetArg(void) {
@@ -811,19 +761,18 @@ bool Xdrv100(uint32_t function) {
         case FUNC_EVERY_SECOND:
 //        if(!ebcstatus.requestpending){
           if(refresh_interval % 10 == 0) {
-            CmdVals();  
+            //SerialVals();
             //ebcSerial->write(cmd_vals,sizeof(cmd_vals));
             //ebcstatus.ebcstate = NEXT_VALS;
           }
-          if(refresh_interval % 14 == 0) {
-            CmdSernum();
+          if(refresh_interval % 16 == 0) {
+            //SerialSernum();
             //ebcSerial->write(cmd_sernum,sizeof(cmd_sernum));
             //ebcstatus.ebcstate = NEXT_SERNUM;
           }
-          ebcstatus.requestpending = true;
+          ebcstatus.requestpending = false;
         //}
           refresh_interval++;
-          
           break;
         case FUNC_JSON_APPEND:
           EBCShow(1);
